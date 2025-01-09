@@ -4,7 +4,7 @@ import { Transaction } from '../entities/transactions'
 import config from '../../mikro-orm.config';
 
 export class transactionController {
-    public async insertTransaction(req: Request,res: Response) {
+    public async addTransaction(req: Request, res: Response) {
         try {
             const orm = await MikroORM.init(config);
             const transaction = new Transaction();
@@ -24,7 +24,7 @@ export class transactionController {
         }
     }
 
-    public async getData(req:Request, res:Response) {
+    public async getTransactions(req: Request, res: Response) {
         try {
             const orm = await MikroORM.init(config);
             const em = orm.em.fork();
@@ -34,6 +34,38 @@ export class transactionController {
             console.log(err);
         }
     }
+
+    public async updateTransaction(req: Request, res: Response) {
+        try {
+            const id=parseInt(req.params.id);
+            if(!id){
+                res.status(404).send("Transaction not found");
+            }
+            const orm = await MikroORM.init(config);
+            const em = orm.em.fork();
+            const transaction=await em.findOne(Transaction,id);
+            if(!transaction){
+                res.status(404).send("Transaction not found");
+            }
+            const { description, originalAmount, currency } = req.body;
+            transaction!.date = new Date();
+            if(description!==undefined){
+                transaction!.description=description;
+            }
+            if(originalAmount!==undefined){
+                transaction!.originalAmount=originalAmount;
+            }
+            if(currency!==undefined){
+                transaction!.currency=currency;
+            }
+            await em.flush();
+            res.status(200).send("Transaction updated successfully");
+            await orm.close();
+        } catch (err) {
+            console.log(err);
+        }
+    }
+    
 }
 
 
