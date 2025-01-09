@@ -10,5 +10,7 @@ router.post('/newData',tc.addTransaction)
 
 router.put('/update/:id', tc.updateTransaction)
 
+router.delete('/delete/:id', tc.deleteTransaction);
+
 export default router;
 

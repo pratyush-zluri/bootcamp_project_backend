@@ -65,6 +65,24 @@ export class transactionController {
             console.log(err);
         }
     }
+
+    public async deleteTransaction(req:Request, res: Response){
+        try{
+            const orm= await MikroORM.init(config);
+            const em=orm.em.fork();
+            const id:number=Number(req.params.id);
+            const transaction=await em.findOne(Transaction,id);
+            console.log(transaction);
+            if(!transaction){
+                res.status(404).send("Transaction not found");
+                return;
+            }
+            const result=await em.remove(transaction).flush();
+            res.send("Transaction deleted successfully");
+        } catch(err){
+            console.log(err);
+        }
+    }
     
 }
 
