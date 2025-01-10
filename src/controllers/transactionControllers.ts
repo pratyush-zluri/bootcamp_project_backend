@@ -28,7 +28,9 @@ export class transactionController {
         try {
             const orm = await MikroORM.init(config);
             const em = orm.em.fork();
-            const data = await em.find(Transaction, {});
+            const data = await em.find(Transaction, {}, {orderBy: {date:'DESC'}});
+            const count=await em.count(Transaction);
+            console.log(count);
             res.send(data);
         } catch (err) {
             console.log(err);
