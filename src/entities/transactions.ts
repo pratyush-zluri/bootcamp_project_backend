@@ -8,7 +8,7 @@ export class Transaction {
   @Property({ type: 'date' })
   date!: Date;
 
-  @Property()
+  @Property({length: 500})
   description!: string;
 
   @Property({ type: 'float' })
