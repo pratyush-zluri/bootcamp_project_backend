@@ -19,4 +19,8 @@ export class Transaction {
 
   @Property({ type: 'float' })
   amount_in_inr!: number;
+
+  @Property({ default: false })
+  isDeleted!: boolean;
+
 }
