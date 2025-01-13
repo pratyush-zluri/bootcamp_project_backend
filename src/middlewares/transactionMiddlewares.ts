@@ -3,7 +3,6 @@ import { Request, Response, NextFunction } from "express";
 import { Transaction } from "../entities/transactions";
 import { MikroORM } from "@mikro-orm/postgresql";
 import config from "../../mikro-orm.config";
-import multer from "multer";
 
 export class middlewares {
     public async idValdator(req: Request, res: Response, next: NextFunction) {
@@ -71,35 +70,31 @@ export class middlewares {
         }
     }
 
-    public async validateUpdate(req: Request, res: Response, next: NextFunction) {
+    public async validateUpdate(req: Request, res: Response, next: NextFunction): Promise<void> {
         try {
             const { description, originalAmount, currency } = req.body;
-            if(description!==undefined){
-                if(typeof(description)!=="string"){
-                    res.status(400).send("Description should be a string");
-                    return;
-                }
+    
+            if (description !== undefined && typeof description !== "string") {
+                res.status(400).send("Description should be a string");
+                return;
             }
-            if(originalAmount!==undefined){
-                if(typeof(originalAmount)!=="number"){
-                    res.status(400).send("Amount should be a number");
-                    return;
-                }
-            }
-            if(currency!==undefined){
-                if(typeof(currency)!=="string"){
-                    res.status(400).send("Currency should be a string");
-                    return;
-                }
-            }
-            if(typeof(originalAmount)!=="number"){
+    
+            if (originalAmount !== undefined && typeof originalAmount !== "number") {
                 res.status(400).send("Amount should be a number");
                 return;
             }
+    
+            if (currency !== undefined && typeof currency !== "string") {
+                res.status(400).send("Currency should be a string");
+                return;
+            }
+    
             next();
         } catch (err) {
-            console.log(err);
+            console.error("Validation error:", err);
+            res.status(500).send("An error occurred during validation");
         }
     }
+    
 
 }
