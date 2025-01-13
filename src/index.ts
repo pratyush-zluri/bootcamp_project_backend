@@ -2,6 +2,8 @@ import express from 'express'
 import cors from 'cors'
 import bodyParser from 'body-parser'
 import router from './routes/transactionRoutes'
+import 'reflect-metadata';
+
 
 const port=3000;
 const app=express();

@@ -5,8 +5,7 @@ import { Transaction } from "../entities/transactions";
 import { MikroORM } from "@mikro-orm/postgresql";
 import config from "../../mikro-orm.config";
 import { parse, isValid } from "date-fns";
-import { transactionServices } from "../services/transactionService";
-const ts=new transactionServices();
+
 type Data = {
     Date: string;
     Description: string;
@@ -18,6 +17,26 @@ export class parseCSV {
     constructor() {
         this.parseCsv = this.parseCsv.bind(this);
     }
+
+    public async convertCurrency(currency: string, originalAmount: number): Promise<number> {
+        const api = `https://v6.exchangerate-api.com/v6/9cb5f6ea22832f565cc716bd/latest/${currency}`;
+        try {
+            const response = await fetch(api);
+            if (!response.ok) {
+                throw new Error(`Error fetching exchange rates: ${response.statusText}`);
+            }
+            const data = await response.json();
+            const toExchangeRate = data.conversion_rates['INR'];
+            if (!toExchangeRate) {
+                throw new Error('INR conversion rate not found in response');
+            }
+            return originalAmount * toExchangeRate;
+        } catch (error) {
+            console.error('Currency conversion error:', error);
+            throw error;
+        }
+    }
+
     public async parseCsv(req: Request, res: Response): Promise<void> {
         try {
             const orm = await MikroORM.init(config);
@@ -60,7 +79,7 @@ export class parseCSV {
                 transaction.description = row.Description;
                 transaction.originalAmount = row.Amount;
                 transaction.currency = row.Currency;
-                transaction.amount_in_inr = await ts.convertCurrency(row.Currency, row.Amount);
+                transaction.amount_in_inr = await this.convertCurrency(row.Currency, row.Amount);
                 transactions.push(transaction);
             }
 
