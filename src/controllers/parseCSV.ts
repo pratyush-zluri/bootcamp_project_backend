@@ -2,9 +2,20 @@ import Papa, { ParseResult } from "papaparse";
 import fs from "fs/promises";
 import { Request, Response } from "express";
 import { Transaction } from "../entities/transactions";
-import { MikroORM } from "@mikro-orm/postgresql";
+import { MikroORM } from "@mikro-orm/core";
 import config from "../../mikro-orm.config";
 import { parse, isValid } from "date-fns";
+import Joi from 'joi';
+import winston from 'winston';
+import currencyConversionRates from "../globals/currencyConversionRates";
+
+const logger = winston.createLogger({
+    level: 'info',
+    format: winston.format.json(),
+    transports: [
+        new winston.transports.Console()
+    ],
+});
 
 type Data = {
     Date: string;
@@ -18,36 +29,48 @@ export class parseCSV {
         this.parseCsv = this.parseCsv.bind(this);
     }
 
-    public async convertCurrency(currency: string, originalAmount: number): Promise<number> {
-        const api = `https://v6.exchangerate-api.com/v6/9cb5f6ea22832f565cc716bd/latest/${currency}`;
+    private async initORM() {
         try {
-            const response = await fetch(api);
-            if (!response.ok) {
-                throw new Error(`Error fetching exchange rates: ${response.statusText}`);
-            }
-            const data = await response.json();
-            const toExchangeRate = data.conversion_rates['INR'];
-            if (!toExchangeRate) {
-                throw new Error('INR conversion rate not found in response');
-            }
-            return originalAmount * toExchangeRate;
+            const orm = await MikroORM.init({
+                ...config,
+                entities: [Transaction] // Ensure the Transaction entity is included
+            });
+            return orm.em.fork();
         } catch (error) {
-            console.error('Currency conversion error:', error);
-            throw error;
+            logger.error("Error initializing ORM:", error);
+            throw new Error("Database connection error");
         }
     }
 
-    public async parseCsv(req: Request, res: Response): Promise<void> {
-        try {
-            const orm = await MikroORM.init(config);
-            const em = orm.em.fork();
+    public getConversionRate(currency: string): number {
+        const rate = currencyConversionRates[currency];
+        if (rate === undefined) {
+            throw new Error(`Conversion rate for currency ${currency} not found`);
+        }
+        return rate;
+    }
 
+    public async parseCsv(req: Request, res: Response): Promise<void> {
+        const schema = Joi.object<Data>({
+            Date: Joi.string().required(),
+            Description: Joi.string().required(),
+            Amount: Joi.number().required(),
+            Currency: Joi.string().required(),
+        });
+    
+        const formatDate = (dateString: string) => {
+            const [day, month, year] = dateString.split("-");
+            return new Date(`${year}-${month}-${day}`);
+        };
+    
+        try {
+            const em = await this.initORM();
             const file = req.file;
             if (!file) {
                 res.status(400).json({ error: "No file uploaded" });
                 return;
             }
-
+    
             const fileContent = await fs.readFile(file.path, "utf-8");
             const result: ParseResult<Data> = Papa.parse(fileContent, {
                 header: true,
@@ -55,45 +78,123 @@ export class parseCSV {
                 transformHeader: (header) => header.trim(),
                 dynamicTyping: true,
             });
-
+    
             const transactions: Transaction[] = [];
+            const repeats: Data[] = [];
+            const errors: string[] = [];
+            const validData: Data[] = [];
+            const seenEntries = new Set<string>();
+    
+            // Collect valid data
             for (const row of result.data) {
-
-                const parsedDate = parse(row.Date, "dd-MM-yyyy", new Date());
+                // Skip rows with empty fields
+                if (!row.Date || !row.Description || row.Amount == null || !row.Currency) {
+                    logger.error(`Empty field found in row: ${JSON.stringify(row)}`);
+                    errors.push(`Empty field found in row: ${JSON.stringify(row)}`);
+                    continue;
+                }
+    
+                const { error } = schema.validate(row);
+                if (error) {
+                    logger.error(`Validation error: ${error.details[0].message}`);
+                    errors.push(`Validation error in row: ${JSON.stringify(row)} - ${error.details[0].message}`);
+                    continue;
+                }
+    
+                const parsedDate = formatDate(row.Date);
                 if (!isValid(parsedDate)) {
-                    console.error(`Invalid date found: ${row.Date}`);
+                    logger.error(`Invalid date found: ${row.Date}`);
+                    errors.push(`Invalid date in row: ${JSON.stringify(row)} - ${row.Date}`);
                     continue;
                 }
-
-                const existingTransaction = await em.findOne(Transaction, {
-                    date: parsedDate,
-                    description: row.Description,
+    
+                if (row.Amount < 0) {
+                    logger.error(`Negative amount found: ${row.Amount}`);
+                    errors.push(`Negative amount in row: ${JSON.stringify(row)} - ${row.Amount}`);
+                    continue;
+                }
+    
+                if (!currencyConversionRates[row.Currency]) {
+                    logger.error(`Unsupported currency found: ${row.Currency}`);
+                    errors.push(`Unsupported currency in row: ${JSON.stringify(row)} - ${row.Currency}`);
+                    continue;
+                }
+    
+                const key = `${parsedDate.toISOString()}|${row.Description}|${row.Amount}|${row.Currency}`;
+                if (seenEntries.has(key)) {
+                    logger.error(`Duplicate entry found in CSV: ${JSON.stringify(row)}`);
+                    repeats.push(row);
+                    continue;
+                }
+    
+                seenEntries.add(key);
+                validData.push(row);
+            }
+    
+            // If there are no valid data rows, return an error
+            if (validData.length === 0) {
+                res.status(400).json({
+                    error: "No valid transactions to upload",
+                    repeats,
+                    errors
                 });
-                if (existingTransaction) {
-                    console.error(`Transaction already exists: ${row.Description}`);
+                await fs.unlink(file.path);
+                return;
+            }
+    
+            // Batch existence check
+            const dateDescriptionPairs = validData.map(data => ({
+                date: formatDate(data.Date),
+                description: data.Description
+            }));
+    
+            const existingTransactions = await em.find(Transaction, { $or: dateDescriptionPairs });
+            const existingSet = new Set(existingTransactions.map(t => `${t.date.toISOString()}|${t.description}`));
+    
+            // Process valid data and create transactions
+            for (const data of validData) {
+                const parsedDate = formatDate(data.Date);
+                const key = `${parsedDate.toISOString()}|${data.Description}`;
+    
+                if (existingSet.has(key)) {
+                    logger.error(`Transaction already exists: ${data.Description}`);
+                    repeats.push(data);
                     continue;
                 }
-
+    
+                let conversionRate;
+                try {
+                    conversionRate = this.getConversionRate(data.Currency);
+                } catch (error) {
+                    logger.error(`Error getting conversion rate for currency: ${data.Currency}`, error);
+                    errors.push(`Error getting conversion rate for currency: ${data.Currency}`);
+                    continue;
+                }
+    
                 const transaction = new Transaction();
-                transaction.date = new Date(parsedDate);
-                transaction.description = row.Description;
-                transaction.originalAmount = row.Amount;
-                transaction.currency = row.Currency;
-                transaction.amount_in_inr = await this.convertCurrency(row.Currency, row.Amount);
+                transaction.date = parsedDate;
+                transaction.description = data.Description;
+                transaction.originalAmount = data.Amount;
+                transaction.currency = data.Currency;
+                transaction.amount_in_inr = data.Amount * conversionRate;
+    
                 transactions.push(transaction);
             }
-
+    
             if (transactions.length > 0) {
-                await em.persist(transactions).flush();
-                res.status(201).json({ message: "Transactions uploaded successfully" });
-            } else {
-                res.status(400).json({ error: "No valid transactions to upload" });
+                await em.persistAndFlush(transactions);
             }
-
+    
+            res.status(201).json({
+                message: `${transactions.length} Transactions uploaded successfully`,
+                repeats,
+                errors
+            });
+    
             await fs.unlink(file.path);
-        } catch (err) {
-            console.error("Error processing CSV file:", err);
+        } catch (err:any) {
+            logger.error("Error processing CSV file:", err);
             res.status(500).json({ error: "An error occurred while processing the CSV file" });
+            return;
         }
-    }
-}
+    }}

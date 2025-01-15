@@ -2,168 +2,228 @@ import { Request, Response } from 'express';
 import { MikroORM } from '@mikro-orm/core';
 import { Transaction } from '../entities/transactions';
 import config from '../../mikro-orm.config';
+import Joi from 'joi';
+import winston from 'winston';
+import { parseAsync } from 'json2csv';
+import currencyConversionRates from "../globals/currencyConversionRates";
 
+const logger = winston.createLogger({
+    level: 'info',
+    format: winston.format.json(),
+    transports: [
+        new winston.transports.Console()
+    ],
+});
 
 export class transactionController {
-    constructor() {
-        this.addTransaction = this.addTransaction.bind(this);
-        this.getTransactions = this.getTransactions.bind(this);
-        this.updateTransaction = this.updateTransaction.bind(this);
-        this.deleteTransaction = this.deleteTransaction.bind(this);
-    }
-
-    public async convertCurrency(currency: string, originalAmount: number): Promise<number> {
-        const api = `https://v6.exchangerate-api.com/v6/9cb5f6ea22832f565cc716bd/latest/${currency}`;
-        try {
-            const response = await fetch(api);
-            if (!response.ok) {
-                throw new Error(`Error fetching exchange rates: ${response.statusText}`);
-            }
-            const data = await response.json();
-            const toExchangeRate = data.conversion_rates['INR'];
-            if (!toExchangeRate) {
-                throw new Error('INR conversion rate not found in response');
-            }
-            return originalAmount * toExchangeRate;
-        } catch (error) {
-            console.error('Currency conversion error:', error);
-            throw error;
-        }
-    }
-    public async addTransaction(req: Request, res: Response): Promise<void> {
+    private initORM = async () => {
         try {
             const orm = await MikroORM.init(config);
-            const transaction = new Transaction();
-            const { description, originalAmount, currency } = req.body;
-            if (!description || !originalAmount || !currency) {
-                res.status(400).send("Incomplete details");
+            return orm.em.fork();
+        } catch (error) {
+            logger.error("Error initializing ORM:", error);
+            throw new Error("Database connection error");
+        }
+    };
+
+    public getConversionRate(currency: string): number {
+        const rate = currencyConversionRates[currency];
+        if (rate === undefined) {
+          throw new Error(`Conversion rate for currency ${currency} not found`);
+        }
+        return rate;
+      }
+    
+      public addTransaction = async (req: Request, res: Response): Promise<void> => {
+        try {
+          const em = await this.initORM();
+          const { description, originalAmount, currency } = req.body;
+    
+          const transaction = new Transaction();
+          transaction.date = new Date();
+          transaction.description = description;
+          transaction.currency = currency;
+          transaction.originalAmount = originalAmount;
+    
+          try {
+            const exchangeRate = this.getConversionRate(currency);
+            transaction.amount_in_inr = originalAmount * exchangeRate;
+          } catch (error) {
+            res.status(400).send("Invalid currency");
+            return;
+          }
+          await em.persistAndFlush(transaction);
+          res.status(201).send(transaction);
+        } catch (err) {
+          logger.error("Error adding transaction:", err);
+          res.status(500).send('An error occurred while adding the transaction');
+        }
+      };
+    
+
+    public getTransactions = async (req: Request, res: Response): Promise<void> => {
+        try {
+            const em = await this.initORM();
+            const data = await em.find(Transaction, { isDeleted: false }, { orderBy: { date: 'DESC' } });
+            if (data.length === 0) {
+                res.status(404).send("No transactions found");
                 return;
             }
-            const amountInINR = await this.convertCurrency(currency, originalAmount);
-            transaction.date = new Date();
-            transaction.description = description;
-            transaction.currency = currency;
-            transaction.originalAmount = originalAmount;
-            transaction.amount_in_inr = amountInINR;
-            const em = orm.em.fork();
-            await em.persist(transaction).flush();
-            console.log(transaction.id);
-            res.status(201).send(transaction);
-        } catch (err) {
-            console.log(err);
-            res.status(500).send('An error occurred while adding the transaction');
-        }
-    }
-    public async getTransactions(req: Request, res: Response): Promise<void> {
-        try {
-            const orm = await MikroORM.init(config);
-            const em = orm.em.fork();
-            const count=await em.count(Transaction);
-            console.log(count);
-            const data = await em.find(Transaction, {isDeleted: false}, { orderBy: { date: 'DESC' } });
             res.send(data);
         } catch (err) {
-            console.log(err);
-            console.error(err);
+            logger.error("Error fetching transactions:", err);
             res.status(500).send('An error occurred while fetching transactions');
         }
-    }
+    };
 
-    public async updateTransaction(req: Request, res: Response): Promise<void> {
+    public getSoftDeletedTransactions = async (req: Request, res: Response): Promise<void> => {
         try {
-            const id = parseInt(req.params.id);
-            if (!id) {
-                res.status(404).send("Transaction not found");
+            const em = await this.initORM();
+            const data = await em.find(Transaction, { isDeleted: true }, { orderBy: { date: 'DESC' } });
+            if (data.length === 0) {
+                res.status(404).send("No transactions found");
                 return;
             }
-            const orm = await MikroORM.init(config);
-            const em = orm.em.fork();
-            const transaction = await em.findOne(Transaction, id);
-            if (!transaction) {
-                res.status(404).send("Transaction not found");
-                return;
-            }
-            const { description, originalAmount, currency } = req.body;
-            transaction!.date = new Date();
-            if(description!==undefined){
-                transaction!.description=description;
-            }
-            if (originalAmount !== undefined) {
-                transaction.originalAmount = originalAmount;
-            };
-            if (currency !== undefined) {
-                transaction.currency = currency;
-            }
-            transaction.amount_in_inr = await this.convertCurrency(transaction.currency, transaction.originalAmount);
-            await em.flush();
-            res.status(200).send("Transaction updated successfully");
-            await orm.close();
+            res.send(data);
         } catch (err) {
-            console.log(err);
-            res.status(500).send('An error occurred while updating the transaction');
+            logger.error("Error fetching transactions:", err);
+            res.status(500).send('An error occurred while fetching transactions');
         }
-    }
+    };
 
-    public async deleteTransaction(req: Request, res: Response): Promise<void> {
+    public updateTransaction = async (req: Request, res: Response): Promise<void> => {
         try {
-            const orm = await MikroORM.init(config);
-            const em = orm.em.fork();
+          const id = parseInt(req.params.id);
+          if (isNaN(id)) {
+            res.status(404).send("Transaction not found");
+            return;
+          }
+    
+          const em = await this.initORM();
+          const transaction = await em.findOne(Transaction, id);
+          if (!transaction) {
+            res.status(404).send("Transaction not found");
+            return;
+          }
+    
+          if (transaction.isDeleted) {
+            res.status(400).send("Cannot update a soft-deleted transaction");
+            return;
+          }
+    
+          const { description, originalAmount, currency } = req.body;
+          transaction.date = new Date();
+          if (description !== undefined) {
+            transaction.description = description;
+          }
+          if (originalAmount !== undefined) {
+            transaction.originalAmount = originalAmount;
+          }
+          if (currency !== undefined) {
+            transaction.currency = currency;
+          }
+    
+          try {
+            const exchangeRate = this.getConversionRate(transaction.currency);
+            transaction.amount_in_inr = transaction.originalAmount * exchangeRate;
+            if (isNaN(transaction.amount_in_inr)) {
+              throw new Error("Invalid amount_in_inr value");
+            }
+          } catch (error) {
+            res.status(400).send("Invalid currency or amount");
+            return;
+          }
+    
+          await em.flush();
+          res.status(200).send("Transaction updated successfully");
+        } catch (err) {
+          logger.error("Error updating transaction:", err);
+          res.status(500).send('An error occurred while updating the transaction');
+        }
+      };
+
+    public deleteTransaction = async (req: Request, res: Response): Promise<void> => {
+        try {
+            const em = await this.initORM();
             const id = Number(req.params.id);
+            if (isNaN(id)) {
+                res.status(404).send("Transaction not found");
+                return;
+            }
             const transaction = await em.findOne(Transaction, id);
             if (!transaction) {
                 res.status(404).send("Transaction not found");
                 return;
             }
-            const result=await em.remove(transaction).flush();
-            await em.remove(transaction).flush();
-            res.send("Transaction deleted successfully");
+            if (transaction.isDeleted) {
+                res.status(400).send("Cannot hard delete a soft-deleted transaction");
+                return;
+            }
+            await em.removeAndFlush(transaction);
+            res.status(200).send("Transaction deleted successfully");
         } catch (err) {
-            console.error(err);
+            logger.error("Error deleting transaction:", err);
             res.status(500).send('An error occurred while deleting the transaction');
         }
-    }
+    };
 
-    public async softDeleteTransaction(req: Request, res: Response): Promise<void> {
+    public softDeleteTransaction = async (req: Request, res: Response): Promise<void> => {
         try {
-            const orm = await MikroORM.init(config);
-            const em = orm.em.fork();
+            const em = await this.initORM();
             const id = Number(req.params.id);
+            if (isNaN(id)) {
+                res.status(404).send("Transaction not found");
+                return;
+            }
             const transaction = await em.findOne(Transaction, id);
-    
             if (!transaction) {
                 res.status(404).send("Transaction not found");
                 return;
             }
             transaction.isDeleted = true;
             await em.flush();
-    
-            res.send("Transaction soft deleted successfully");
+            res.send(transaction);
         } catch (err) {
-            console.error(err);
+            logger.error("Error soft-deleting transaction:", err);
             res.status(500).send('An error occurred while deleting the transaction');
         }
-    }
-    
-    public async restoreTransaction(req: Request, res: Response): Promise<void> {
+    };
+
+    public restoreTransaction = async (req: Request, res: Response): Promise<void> => {
         try {
             const id = parseInt(req.params.id);
-            const orm = await MikroORM.init(config);
-            const em = orm.em.fork();
-    
+            if (isNaN(id)) {
+                res.status(404).send("Transaction not found or not soft-deleted");
+                return;
+            }
+
+            const em = await this.initORM();6
             const transaction = await em.findOne(Transaction, { id, isDeleted: true });
             if (!transaction) {
                 res.status(404).send("Transaction not found or not soft-deleted");
                 return;
             }
-    
+
             transaction.isDeleted = false;
             await em.flush();
-    
             res.status(200).send("Transaction restored successfully");
-            await orm.close();
         } catch (err) {
-            console.error("Error restoring transaction:", err);
+            logger.error("Error restoring transaction:", err);
             res.status(500).send("An error occurred while restoring the transaction");
         }
-    }
+    };
+
+    public downloadTransactionsCSV = async (req: Request, res: Response): Promise<void> => {
+        try {
+            const em = await this.initORM();
+            const transactions = await em.find(Transaction, { isDeleted: false });
+            const csv = await parseAsync(transactions, { fields: ['id', 'date', 'description', 'originalAmount', 'currency', 'amount_in_inr'] });
+            res.header('Content-Type', 'text/csv');
+            res.attachment('transactions.csv');
+            res.send(csv);
+        } catch (err) {
+            logger.error("Error downloading transactions as CSV:", err);
+            res.status(500).send('An error occurred while downloading transactions');
+        }
+    };
 }
