@@ -67,6 +67,7 @@ jest.mock('../../src/entities/transactions', () => {
   return { Transaction };
 });
 
+// Mock currency conversion rates
 jest.mock('../../src/globals/currencyConversionRates', () => ({
   __esModule: true,
   default: {
@@ -74,27 +75,23 @@ jest.mock('../../src/globals/currencyConversionRates', () => ({
     EUR: 89.44,
     GBP: 104.70,
   }
+}));
+
+// Mock fs/promises
+jest.mock('fs/promises', () => ({
+  readFile: jest.fn(),
+  unlink: jest.fn().mockResolvedValue(undefined)
+}));
+
+// Mock json2csv
+jest.mock('json2csv', () => ({
+  parseAsync: jest.fn().mockResolvedValue('mocked,csv,content')
 }));
 
 import { parseCSV } from '../../src/controllers/parseCSV';
 import { MikroORM } from '@mikro-orm/core';
-import Papa from 'papaparse';
 import fs from 'fs/promises';
 import winston from 'winston';
-
-// Additional mocks
-jest.mock('fs/promises');
-jest.mock('papaparse');
-
-// Mock currencyConversionRates
-jest.mock('../../src/globals/currencyConversionRates', () => ({
-  __esModule: true,
-  default: {
-    USD: 83.12,
-    EUR: 89.44,
-    GBP: 104.70,
-  }
-}));
 
 describe('parseCSV', () => {
   let parser: parseCSV;
@@ -103,27 +100,27 @@ describe('parseCSV', () => {
   let mockRes: any;
 
   beforeEach(() => {
-    // Reset all mocks
     jest.clearAllMocks();
 
-    // Setup mock EM
     mockEM = {
-      find: jest.fn(),
-      persistAndFlush: jest.fn(),
+      find: jest.fn().mockResolvedValue([]),
+      persistAndFlush: jest.fn().mockResolvedValue(undefined),
       fork: jest.fn().mockReturnThis(),
     };
 
-    // Mock MikroORM.init
     (MikroORM.init as jest.Mock).mockResolvedValue({
       em: {
         fork: () => mockEM
       }
     });
 
-    // Setup mock request and response
     mockReq = {
+      body: {
+        validData: [],
+        errors: []
+      },
       file: {
-        path: 'test.csv'
+        path: 'test/path'
       }
     };
 
@@ -132,193 +129,160 @@ describe('parseCSV', () => {
       json: jest.fn()
     };
 
-    // Initialize parser
     parser = new parseCSV();
   });
 
-  it('should handle missing file', async () => {
-    mockReq.file = null;
-
-    await parser.parseCsv(mockReq, mockRes);
-
-    expect(mockRes.status).toHaveBeenCalledWith(400);
-    expect(mockRes.json).toHaveBeenCalledWith({ error: 'No file uploaded' });
-  });
-
-  it('should successfully parse valid CSV data', async () => {
-    const mockData = [{
-      Date: '01-01-2024',
-      Description: 'Test Transaction',
-      Amount: 100,
-      Currency: 'USD'
-    }];
-
-    (fs.readFile as jest.Mock).mockResolvedValue('csv content');
-    (Papa.parse as jest.Mock).mockReturnValue({
-      data: mockData
+  describe('getConversionRate', () => {
+    it('should return correct conversion rate for valid currencies', () => {
+      expect(parser.getConversionRate('USD')).toBe(83.12);
+      expect(parser.getConversionRate('EUR')).toBe(89.44);
+      expect(parser.getConversionRate('GBP')).toBe(104.70);
     });
-    mockEM.find.mockResolvedValue([]);
 
-    await parser.parseCsv(mockReq, mockRes);
-
-    expect(mockEM.persistAndFlush).toHaveBeenCalled();
-    expect(mockRes.status).toHaveBeenCalledWith(201);
-    expect(mockRes.json).toHaveBeenCalledWith({
-      message: '1 Transactions uploaded successfully',
-      repeats: [],
-      errors: []
+    it('should throw error for invalid currency', () => {
+      expect(() => parser.getConversionRate('INVALID')).toThrow('Conversion rate for currency INVALID not found');
     });
   });
 
-  it('should handle duplicate entries in CSV', async () => {
-    const mockData = [
-      {
+  describe('parseCsv', () => {
+    it('should process valid transactions successfully', async () => {
+      mockReq.body.validData = [{
         Date: '01-01-2024',
         Description: 'Test Transaction',
         Amount: 100,
         Currency: 'USD'
-      },
-      {
+      }];
+
+      await parser.parseCsv(mockReq, mockRes);
+
+      expect(mockEM.persistAndFlush).toHaveBeenCalled();
+      expect(mockRes.status).toHaveBeenCalledWith(201);
+      expect(mockRes.json).toHaveBeenCalledWith(expect.objectContaining({
+        message: '1 Transactions uploaded successfully',
+        processedTransactionsCSV: 'mocked,csv,content'
+      }));
+    });
+
+    it('should handle duplicate entries both in CSV and database', async () => {
+      const mockData = [
+        {
+          Date: '01-01-2024',
+          Description: 'Test Transaction',
+          Amount: 100,
+          Currency: 'USD'
+        },
+        {
+          Date: '01-01-2024',
+          Description: 'Test Transaction',
+          Amount: 100,
+          Currency: 'USD'
+        }
+      ];
+
+      mockReq.body.validData = mockData;
+      mockEM.find.mockResolvedValue([{
+        date: new Date('2024-01-01'),
+        description: 'Test Transaction'
+      }]);
+
+      await parser.parseCsv(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(201);
+      expect(mockRes.json).toHaveBeenCalledWith(expect.objectContaining({
+        message: '0 Transactions uploaded successfully',
+        repeats: expect.arrayContaining([mockData[0], mockData[1]])
+      }));
+    });
+
+    it('should handle various validation errors', async () => {
+      mockReq.body.validData = [
+        {
+          Date: 'invalid-date',
+          Description: 'Test Transaction',
+          Amount: 100,
+          Currency: 'USD'
+        },
+        {
+          Date: '01-01-2024',
+          Description: 'Test Transaction',
+          Amount: -100,
+          Currency: 'USD'
+        },
+        {
+          Date: '01-01-2024',
+          Description: 'Test Transaction',
+          Amount: 100,
+          Currency: 'INVALID'
+        }
+      ];
+
+      await parser.parseCsv(mockReq, mockRes);
+
+      expect(mockRes.json).toHaveBeenCalledWith(expect.objectContaining({
+        errors: expect.arrayContaining([
+          expect.stringContaining('Invalid date'),
+          expect.stringContaining('Negative amount'),
+          expect.stringContaining('Unsupported currency')
+        ])
+      }));
+    });
+
+    it('should handle database connection error', async () => {
+      (MikroORM.init as jest.Mock).mockRejectedValue(new Error('Database connection error'));
+
+      await parser.parseCsv(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(500);
+      expect(mockRes.json).toHaveBeenCalledWith({
+        error: 'An error occurred while processing the CSV file'
+      });
+    });
+
+    it('should calculate correct currency summary', async () => {
+      mockReq.body.validData = [
+        {
+          Date: '01-01-2024',
+          Description: 'USD Transaction 1',
+          Amount: 100,
+          Currency: 'USD'
+        },
+        {
+          Date: '01-01-2024',
+          Description: 'USD Transaction 2',
+          Amount: 200,
+          Currency: 'USD'
+        },
+        {
+          Date: '01-01-2024',
+          Description: 'EUR Transaction',
+          Amount: 150,
+          Currency: 'EUR'
+        }
+      ];
+
+      await parser.parseCsv(mockReq, mockRes);
+
+      expect(mockRes.json).toHaveBeenCalledWith(expect.objectContaining({
+        summary: {
+          USD: 300,
+          EUR: 150
+        }
+      }));
+    });
+
+    it('should handle file cleanup errors gracefully', async () => {
+      (fs.unlink as jest.Mock).mockRejectedValue(new Error('File deletion error'));
+      mockReq.body.validData = [{
         Date: '01-01-2024',
         Description: 'Test Transaction',
         Amount: 100,
         Currency: 'USD'
-      }
-    ];
-    
+      }];
 
-    (fs.readFile as jest.Mock).mockResolvedValue('csv content');
-    (Papa.parse as jest.Mock).mockReturnValue({ data: mockData });
-    mockEM.find.mockResolvedValue([]);
+      await parser.parseCsv(mockReq, mockRes);
 
-    await parser.parseCsv(mockReq, mockRes);
-
-    expect(mockRes.status).toHaveBeenCalledWith(201);
-    expect(mockRes.json).toHaveBeenCalledWith({
-      message: '1 Transactions uploaded successfully',
-      repeats: [mockData[1]],
-      errors: []
+      expect(mockRes.status).toHaveBeenCalledWith(201);
+      expect(fs.unlink).toHaveBeenCalledWith('test/path');
     });
-  });
-
-
-describe('parseCSV - getConversionRate', () => {
-  let parser: parseCSV;
-
-  beforeEach(() => {
-    parser = new parseCSV();
-  });
-
-  it('should return the correct conversion rate for a valid currency', () => {
-    const usdRate = parser.getConversionRate('USD');
-    const eurRate = parser.getConversionRate('EUR');
-    const gbpRate = parser.getConversionRate('GBP');
-
-    expect(usdRate).toBe(83.12);
-    expect(eurRate).toBe(89.44);
-    expect(gbpRate).toBe(104.70);
-  });
-
-  it('should throw an error for an invalid currency', () => {
-    expect(() => parser.getConversionRate('INVALID')).toThrowError('Conversion rate for currency INVALID not found');
-  });
-});
-
-
-  it('should handle invalid data in CSV', async () => {
-    const mockData = [{
-      Date: 'invalid-date',
-      Description: 'Test Transaction',
-      Amount: -100,
-      Currency: 'INVALID'
-    }];
-
-    (fs.readFile as jest.Mock).mockResolvedValue('csv content');
-    (Papa.parse as jest.Mock).mockReturnValue({ data: mockData });
-
-    await parser.parseCsv(mockReq, mockRes);
-
-    expect(mockRes.status).toHaveBeenCalledWith(400);
-    expect(mockRes.json).toHaveBeenCalledWith({
-      error: 'No valid transactions to upload',
-      repeats: [],
-      errors: expect.any(Array)
-    });
-  });
-
-  it('should handle empty fields in CSV', async () => {
-    const mockData = [{
-      Date: '',
-      Description: '',
-      Amount: null,
-      Currency: ''
-    }];
-
-    (fs.readFile as jest.Mock).mockResolvedValue('csv content');
-    (Papa.parse as jest.Mock).mockReturnValue({ data: mockData });
-
-    await parser.parseCsv(mockReq, mockRes);
-
-    expect(mockRes.status).toHaveBeenCalledWith(400);
-    expect(mockRes.json).toHaveBeenCalledWith({
-      error: 'No valid transactions to upload',
-      repeats: [],
-      errors: expect.any(Array)
-    });
-  });
-
-  it('should handle database connection error', async () => {
-    (MikroORM.init as jest.Mock).mockRejectedValue(new Error('DB Connection Error'));
-
-    await parser.parseCsv(mockReq, mockRes);
-
-    expect(mockRes.status).toHaveBeenCalledWith(500);
-    expect(mockRes.json).toHaveBeenCalledWith({
-      error: 'An error occurred while processing the CSV file'
-    });
-  });
-
-  it('should handle existing transactions in database', async () => {
-    const mockData = [{
-      Date: '01-01-2024',
-      Description: 'Test Transaction',
-      Amount: 100,
-      Currency: 'USD'
-    }];
-
-    (fs.readFile as jest.Mock).mockResolvedValue('csv content');
-    (Papa.parse as jest.Mock).mockReturnValue({ data: mockData });
-    
-    mockEM.find.mockResolvedValue([{
-      date: new Date('2024-01-01'),
-      description: 'Test Transaction'
-    }]);
-
-    await parser.parseCsv(mockReq, mockRes);
-
-    expect(mockRes.status).toHaveBeenCalledWith(201);
-    expect(mockRes.json).toHaveBeenCalledWith({
-      message: '0 Transactions uploaded successfully',
-      repeats: [mockData[0]],
-      errors: []
-    });
-  });
-
-  it('should handle file deletion error', async () => {
-    (fs.unlink as jest.Mock).mockRejectedValue(new Error('Delete Error'));
-    const mockData = [{
-      Date: '01-01-2024',
-      Description: 'Test Transaction',
-      Amount: 100,
-      Currency: 'USD'
-    }];
-
-    (fs.readFile as jest.Mock).mockResolvedValue('csv content');
-    (Papa.parse as jest.Mock).mockReturnValue({ data: mockData });
-    mockEM.find.mockResolvedValue([]);
-
-    await parser.parseCsv(mockReq, mockRes);
-
-    expect(mockRes.status).toHaveBeenCalledWith(201);
   });
 });
