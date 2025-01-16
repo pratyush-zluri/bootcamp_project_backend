@@ -43,8 +43,7 @@ const validateCSVData = async (req: Request, res: Response, next: NextFunction):
     }
 
     try {
-        // const fileContent = await fs.readFile(file.path, "utf-8");
-        const fileContent = req.file.buffer.toString("utf-8");
+        const fileContent = await fs.readFile(file.path, "utf-8");
         const result: ParseResult<Data> = Papa.parse(fileContent, {
             header: true,
             skipEmptyLines: true,

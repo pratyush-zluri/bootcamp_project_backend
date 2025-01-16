@@ -1,4 +1,5 @@
 import Papa, { ParseResult } from "papaparse";
+import fs from "fs/promises";
 import { Request, Response } from "express";
 import { Transaction } from "../entities/transactions";
 import { MikroORM } from "@mikro-orm/core";
@@ -56,22 +57,10 @@ export class parseCSV {
             return new Date(`${year}-${month}-${day}`);
         };
 
-        if (!req.file || !req.file.buffer) {
-            res.status(400).json({ error: "No file uploaded" });
-            return;
-        }
-
         try {
             const em = await this.initORM();
-
-            const csvData = req.file.buffer.toString('utf-8');
-            const parsedData: ParseResult<Data> = Papa.parse(csvData, {
-                header: true,
-                skipEmptyLines: true
-            });
-
-            const validData: Data[] = parsedData.data;
-            const errors: string[] = [];
+            const validData: Data[] = req.body.validData;
+            const errors: string[] = req.body.errors;
             const repeats: Data[] = [];
             const transactions: Transaction[] = [];
             const seenEntries = new Set<string>();
@@ -165,11 +154,12 @@ export class parseCSV {
                 summary: currencySummary,
                 processedTransactionsCSV: csv
             });
+
+            await fs.unlink(req.file.path);
         } catch (err: any) {
             logger.error("Error processing CSV file:", err);
-            if (!res.headersSent) {
-                res.status(500).json({ error: "An error occurred while processing the CSV file" });
-            }
+            res.status(500).json({ error: "An error occurred while processing the CSV file" });
+            return;
         }
     }
 }

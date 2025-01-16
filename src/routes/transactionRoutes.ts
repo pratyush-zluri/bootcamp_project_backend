@@ -7,7 +7,7 @@ import {validateCSVFile, validateCSVData} from '../middlewares/csvMiddleware';
 const router = express.Router();
 const tc = new transactionController();
 const pc = new parseCSV();
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = multer({ dest: 'uploads/' });
 const middleware = new middlewares();
 
 router.get('/', tc.getTransactions);
