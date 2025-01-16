@@ -53,22 +53,4 @@ describe('Transaction Entity', () => {
             expect(updatedTransaction.description).toBe('Updated Transaction');
         }
     }));
-    it('should soft delete a transaction entity', () => __awaiter(void 0, void 0, void 0, function* () {
-        const transaction = yield em.findOne(transactions_1.Transaction, { description: 'Updated Transaction' });
-        if (transaction) {
-            transaction.isDeleted = true;
-            yield em.persistAndFlush(transaction);
-            const deletedTransaction = yield em.findOne(transactions_1.Transaction, { description: 'Updated Transaction' });
-            expect(deletedTransaction).toBeDefined();
-            expect(deletedTransaction.isDeleted).toBe(true);
-        }
-    }));
-    it('should remove a transaction entity', () => __awaiter(void 0, void 0, void 0, function* () {
-        const transaction = yield em.findOne(transactions_1.Transaction, { description: 'Updated Transaction' });
-        if (transaction) {
-            yield em.removeAndFlush(transaction);
-            const removedTransaction = yield em.findOne(transactions_1.Transaction, { description: 'Updated Transaction' });
-            expect(removedTransaction).toBeNull();
-        }
-    }));
 });

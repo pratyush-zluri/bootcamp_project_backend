@@ -46,7 +46,8 @@ const validateCSVData = (req, res, next) => __awaiter(void 0, void 0, void 0, fu
         return;
     }
     try {
-        const fileContent = yield promises_1.default.readFile(file.path, "utf-8");
+        // const fileContent = await fs.readFile(file.path, "utf-8");
+        const fileContent = req.file.buffer.toString("utf-8");
         const result = papaparse_1.default.parse(fileContent, {
             header: true,
             skipEmptyLines: true,

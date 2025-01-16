@@ -13,7 +13,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.parseCSV = void 0;
-const promises_1 = __importDefault(require("fs/promises"));
+const papaparse_1 = __importDefault(require("papaparse"));
 const transactions_1 = require("../entities/transactions");
 const core_1 = require("@mikro-orm/core");
 const mikro_orm_config_1 = __importDefault(require("../../mikro-orm.config"));
@@ -57,10 +57,19 @@ class parseCSV {
                 const [day, month, year] = dateString.split("-");
                 return new Date(`${year}-${month}-${day}`);
             };
+            if (!req.file || !req.file.buffer) {
+                res.status(400).json({ error: "No file uploaded" });
+                return;
+            }
             try {
                 const em = yield this.initORM();
-                const validData = req.body.validData;
-                const errors = req.body.errors;
+                const csvData = req.file.buffer.toString('utf-8');
+                const parsedData = papaparse_1.default.parse(csvData, {
+                    header: true,
+                    skipEmptyLines: true
+                });
+                const validData = parsedData.data;
+                const errors = [];
                 const repeats = [];
                 const transactions = [];
                 const seenEntries = new Set();
@@ -140,12 +149,12 @@ class parseCSV {
                     summary: currencySummary,
                     processedTransactionsCSV: csv
                 });
-                yield promises_1.default.unlink(req.file.path);
             }
             catch (err) {
                 logger.error("Error processing CSV file:", err);
-                res.status(500).json({ error: "An error occurred while processing the CSV file" });
-                return;
+                if (!res.headersSent) {
+                    res.status(500).json({ error: "An error occurred while processing the CSV file" });
+                }
             }
         });
     }

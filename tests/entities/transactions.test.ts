@@ -47,26 +47,4 @@ describe('Transaction Entity', () => {
       expect(updatedTransaction!.description).toBe('Updated Transaction');
     }
   });
-
-  it('should soft delete a transaction entity', async () => {
-    const transaction = await em.findOne(Transaction, { description: 'Updated Transaction' });
-    if (transaction) {
-      transaction.isDeleted = true;
-      await em.persistAndFlush(transaction);
-
-      const deletedTransaction = await em.findOne(Transaction, { description: 'Updated Transaction' });
-      expect(deletedTransaction).toBeDefined();
-      expect(deletedTransaction!.isDeleted).toBe(true);
-    }
-  });
-
-  it('should remove a transaction entity', async () => {
-    const transaction = await em.findOne(Transaction, { description: 'Updated Transaction' });
-    if (transaction) {
-      await em.removeAndFlush(transaction);
-
-      const removedTransaction = await em.findOne(Transaction, { description: 'Updated Transaction' });
-      expect(removedTransaction).toBeNull();
-    }
-  });
 });

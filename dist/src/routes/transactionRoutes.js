@@ -12,7 +12,7 @@ const csvMiddleware_1 = require("../middlewares/csvMiddleware");
 const router = express_1.default.Router();
 const tc = new transactionControllers_1.transactionController();
 const pc = new parseCSV_1.parseCSV();
-const upload = (0, multer_1.default)({ dest: 'uploads/' });
+const upload = (0, multer_1.default)({ storage: multer_1.default.memoryStorage() });
 const middleware = new transactionMiddlewares_1.middlewares();
 router.get('/', tc.getTransactions);
 router.get('/softDeleted', tc.getSoftDeletedTransactions);
