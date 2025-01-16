@@ -10,7 +10,7 @@ const pc = new parseCSV();
 const upload = multer({ dest: 'uploads/' });
 const middleware = new middlewares();
 
-router.get('/', tc.getTransactions);
+router.get('/getTransactions', tc.getTransactions);
 router.get('/softDeleted', tc.getSoftDeletedTransactions);
 router.post('/newData',middleware.newEntryValidator, tc.addTransaction);
 router.put('/update/:id', middleware.idValidator, middleware.validateUpdate,middleware.checkNotSoftDeleted, tc.updateTransaction);
