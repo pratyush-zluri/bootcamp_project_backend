@@ -1,22 +1,36 @@
 import express from 'express';
-import { transactionController } from '../controllers/transactionControllers';
-import { parseCSV } from '../controllers/parseCSV';
+import {
+    getTransactions,
+    getSoftDeletedTransactions,
+    updateTransaction,
+    deleteTransaction,
+    restoreTransaction,
+    downloadTransactionsCSV,
+    addTransaction,
+    softDeleteTransaction,
+} from '../controllers/transactionControllers';
+import { parseCsv } from '../controllers/parseCSV';
 import multer from 'multer';
-import { middlewares } from '../middlewares/transactionMiddlewares';
-import {validateCSVFile, validateCSVData} from '../middlewares/csvMiddleware';
-const router = express.Router();
-const tc = new transactionController();
-const pc = new parseCSV();
-const upload = multer({ dest: 'uploads/' });
-const middleware = new middlewares();
+import {
+    idValidator,
+    newEntryValidator,
+    pageLimitValidator,
+    checkSoftDeleted,
+    validateUpdate,
+} from '../middlewares/transactionMiddlewares';
+import { validateCSVFile, validateCSVData } from '../middlewares/csvMiddleware';
 
-router.get('/getTransactions', tc.getTransactions);
-router.get('/softDeleted', tc.getSoftDeletedTransactions);
-router.post('/newData',middleware.newEntryValidator, tc.addTransaction);
-router.put('/update/:id', middleware.idValidator, middleware.validateUpdate,middleware.checkNotSoftDeleted, tc.updateTransaction);
-router.delete('/delete/:id', middleware.idValidator,middleware.checkNotSoftDeleted, tc.deleteTransaction);
-router.post('/csv', upload.single('file'), middleware.validateUpload, validateCSVFile,validateCSVData,  pc.parseCsv);
-router.delete('/softDelete/:id', middleware.idValidator, tc.softDeleteTransaction);
-router.put('/restore/:id', middleware.idValidator, tc.restoreTransaction);
-router.get('/transactions/download', tc.downloadTransactionsCSV);
+const router = express.Router();
+const upload = multer({ dest: 'uploads/' });
+
+router.get('/transactions', pageLimitValidator, getTransactions);
+router.get('/transactions/soft-deleted', getSoftDeletedTransactions);
+router.post('/transactions', newEntryValidator, addTransaction);
+router.patch('/transactions/:id', idValidator, checkSoftDeleted, validateUpdate, updateTransaction);
+router.delete('/transactions/:id', idValidator, deleteTransaction);
+router.post('/transactions/upload-csv', upload.single('file'), validateCSVFile, validateCSVData, parseCsv);
+router.patch('/transactions/:id/soft-delete', idValidator, softDeleteTransaction);
+router.patch('/transactions/:id/restore', idValidator, restoreTransaction);
+router.get('/transactions/export-csv', downloadTransactionsCSV);
+
 export default router;

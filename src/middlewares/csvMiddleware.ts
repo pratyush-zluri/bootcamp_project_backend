@@ -2,15 +2,8 @@ import { Request, Response, NextFunction } from 'express';
 import Joi from 'joi';
 import fs from 'fs/promises';
 import Papa, { ParseResult } from 'papaparse';
-import winston from 'winston';
-
-const logger = winston.createLogger({
-    level: 'info',
-    format: winston.format.json(),
-    transports: [
-        new winston.transports.Console()
-    ],
-});
+import { parse, isValid, format } from 'date-fns';
+import logger from '../utils/logger';
 
 type Data = {
     Date: string;
@@ -41,7 +34,14 @@ const validateCSVData = async (req: Request, res: Response, next: NextFunction):
         res.status(400).json({ error: "No file uploaded" });
         return;
     }
-
+    if (file.mimetype !== "text/csv") {
+        res.status(400).json({ error: "Invalid file type. Please upload a CSV file." });
+        return;
+    }
+    if (file.size > 1048576) {
+        res.status(400).json({ error: "File size exceeds the 1 MB limit." });
+        return;
+    }
     try {
         const fileContent = await fs.readFile(file.path, "utf-8");
         const result: ParseResult<Data> = Papa.parse(fileContent, {
@@ -55,6 +55,31 @@ const validateCSVData = async (req: Request, res: Response, next: NextFunction):
         const validData: Data[] = [];
 
         for (const row of result.data) {
+            let date = row.Date;
+
+            // Convert date from dd-MM-yyyy to yyyy-MM-dd if needed
+            const ddMMyyyyRegex = /^\d{2}-\d{2}-\d{4}$/;
+            if (ddMMyyyyRegex.test(date)) {
+                const [day, month, year] = date.split('-');
+                date = `${year}-${month}-${day}`;
+            }
+
+            // Validate date format and value
+            const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+            if (!dateRegex.test(date)) {
+                const errorMsg = `Invalid date format in row: ${JSON.stringify(row)} - Expected format: YYYY-MM-DD`;
+                logger.error(errorMsg);
+                errors.push(errorMsg);
+                continue;
+            }
+            const parsedDate = parse(date, 'yyyy-MM-dd', new Date());
+            if (!isValid(parsedDate) || format(parsedDate, 'yyyy-MM-dd') !== date) {
+                const errorMsg = `Invalid date value in row: ${JSON.stringify(row)} - ${row.Date}`;
+                logger.error(errorMsg);
+                errors.push(errorMsg);
+                continue;
+            }
+
             const { error } = schema.validate(row);
             if (error) {
                 logger.error(`Validation error: ${error.details[0].message}`);

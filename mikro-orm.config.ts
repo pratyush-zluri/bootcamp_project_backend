@@ -5,7 +5,7 @@ import { Transaction } from './src/entities/transactions';
 dotenv.config()
 
 const config = {
-    driver: PostgreSqlDriver,
+  driver: PostgreSqlDriver,
   entities: [Transaction],
   dbName: process.env.dbName,
   user: process.env.user,
