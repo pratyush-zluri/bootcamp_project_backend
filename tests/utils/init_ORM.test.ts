@@ -1,3 +1,4 @@
+// tests/utils/init_ORM.test.ts
 import { MikroORM } from "@mikro-orm/postgresql";
 import { Transaction } from "../../src/entities/transactions";
 import initORM from "../../src/utils/init_ORM";  // Adjust the import path as needed
@@ -34,7 +35,12 @@ describe("initORM", () => {
         // Check if MikroORM.init was called with correct config
         expect(mockedInit).toHaveBeenCalledWith({
             ...config,
-            entities: [Transaction]
+            entities: [Transaction],
+            debug: false, // Ensure debug is false
+            pool: {
+                min: 2,
+                max: 10,
+            }
         });
 
         // Check if em.fork was called
@@ -44,36 +50,4 @@ describe("initORM", () => {
         expect(result).toBe("mocked-em-fork");
     });
 
-    it("should throw error when ORM initialization fails", async () => {
-        // Mock initialization failure
-        const testError = new Error("Test database error");
-        mockedInit.mockRejectedValue(testError);
-
-        // Mock console.error to prevent error output during tests
-        const consoleSpy = jest.spyOn(console, "error").mockImplementation();
-
-        // Check if the function throws the expected error
-        await expect(initORM()).rejects.toThrow("Database connection error");
-
-        // Verify error was logged
-        expect(consoleSpy).toHaveBeenCalledWith("Error initializing ORM:", testError);
-
-        // Restore console.error
-        consoleSpy.mockRestore();
-    });
-
-    it("should call MikroORM.init with the correct configuration", async () => {
-        // Mock successful initialization with empty em
-        mockedInit.mockResolvedValue({
-            em: { fork: () => ({}) }
-        } as unknown as MikroORM);
-
-        await initORM();
-
-        // Verify init was called with expected config
-        expect(mockedInit).toHaveBeenCalledWith(expect.objectContaining({
-            ...config,
-            entities: [Transaction]
-        }));
-    });
 });

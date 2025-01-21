@@ -187,7 +187,7 @@ export const batchSoftDeleteTransactions = async (req: Request, res: Response): 
 
         // Validate that all IDs are numbers
         if (!Array.isArray(parsedIds) || parsedIds.some(isNaN)) {
-            res.status(400).json({ error: "Invalid IDs format. Please provide an array of numbers." });
+            res.status(400).json("Invalid IDs format. Please provide an array of numbers.");
             return;
         }
 

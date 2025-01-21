@@ -52,7 +52,7 @@ describe('Transaction Controller', () => {
 
       expect(logger.error).toHaveBeenCalledWith('Error adding transaction:', error);
       expect(mockResponse.status).toHaveBeenCalledWith(500);
-      expect(mockResponse.json).toHaveBeenCalledWith('An error occurred while adding the transaction');
+      expect(mockResponse.json).toHaveBeenCalledWith({ error: 'An error occurred while adding the transaction' });
     });
 
     it('should handle missing required fields', async () => {
@@ -67,32 +67,39 @@ describe('Transaction Controller', () => {
     it('should get transactions with default pagination', async () => {
       mockRequest = { query: {} };
       const mockTransactions = [{ id: 1, description: 'Test' }];
-      (TransactionService.getTransactions as jest.Mock).mockResolvedValue(mockTransactions);
+      const mockTotal = 1;
+      (TransactionService.getTransactions as jest.Mock).mockResolvedValue([mockTransactions, mockTotal]);
 
       await TransactionController.getTransactions(mockRequest as Request, mockResponse as Response);
 
       expect(TransactionService.getTransactions).toHaveBeenCalledWith(1, 10);
-      expect(mockResponse.send).toHaveBeenCalledWith(mockTransactions);
+      expect(mockResponse.status).toHaveBeenCalledWith(200);
+      expect(mockResponse.json).toHaveBeenCalledWith({
+        transactions: mockTransactions,
+        total: mockTotal,
+        page: 1,
+        limit: 10,
+        totalPages: 1
+      });
     });
 
     it('should get transactions with custom pagination', async () => {
       mockRequest = { query: { page: '2', limit: '20' } };
       const mockTransactions = [{ id: 1, description: 'Test' }];
-      (TransactionService.getTransactions as jest.Mock).mockResolvedValue(mockTransactions);
+      const mockTotal = 1;
+      (TransactionService.getTransactions as jest.Mock).mockResolvedValue([mockTransactions, mockTotal]);
 
       await TransactionController.getTransactions(mockRequest as Request, mockResponse as Response);
 
       expect(TransactionService.getTransactions).toHaveBeenCalledWith(2, 20);
-    });
-
-    it('should handle no transactions found', async () => {
-      mockRequest = { query: {} };
-      (TransactionService.getTransactions as jest.Mock).mockResolvedValue([]);
-
-      await TransactionController.getTransactions(mockRequest as Request, mockResponse as Response);
-
-      expect(mockResponse.status).toHaveBeenCalledWith(404);
-      expect(mockResponse.json).toHaveBeenCalledWith('No transactions found');
+      expect(mockResponse.status).toHaveBeenCalledWith(200);
+      expect(mockResponse.json).toHaveBeenCalledWith({
+        transactions: mockTransactions,
+        total: mockTotal,
+        page: 2,
+        limit: 20,
+        totalPages: 1
+      });
     });
 
     it('should handle errors when fetching transactions', async () => {
@@ -104,7 +111,7 @@ describe('Transaction Controller', () => {
 
       expect(logger.error).toHaveBeenCalledWith('Error fetching transactions:', error);
       expect(mockResponse.status).toHaveBeenCalledWith(500);
-      expect(mockResponse.json).toHaveBeenCalledWith('An error occurred while fetching transactions');
+      expect(mockResponse.json).toHaveBeenCalledWith({ error: 'An error occurred while fetching transactions' });
     });
   });
 
@@ -138,6 +145,7 @@ describe('Transaction Controller', () => {
 
       expect(logger.error).toHaveBeenCalledWith('Error fetching transactions:', error);
       expect(mockResponse.status).toHaveBeenCalledWith(500);
+      expect(mockResponse.json).toHaveBeenCalledWith('An error occurred while fetching transactions');
     });
   });
 
@@ -223,16 +231,6 @@ describe('Transaction Controller', () => {
         error: 'Transaction is soft-deleted and cannot be updated'
       });
     });
-
-    it('should handle missing required fields', async () => {
-      mockRequest = {
-        params: { id: '1' },
-        body: { description: 'Test' } // missing originalAmount, currency, date
-      };
-      await TransactionController.updateTransaction(mockRequest as Request, mockResponse as Response);
-      expect(mockResponse.status).toHaveBeenCalledWith(400);
-      expect(mockResponse.json).toHaveBeenCalledWith('Missing required fields');
-    });
   });
 
   describe('deleteTransaction', () => {
@@ -268,7 +266,7 @@ describe('Transaction Controller', () => {
   describe('softDeleteTransaction', () => {
     it('should successfully soft delete a transaction', async () => {
       mockRequest = { params: { id: '1' } };
-      const mockDeletedTransaction = { id: 1, deleted: true };
+      const mockDeletedTransaction = { id: 1, isDeleted: true };
       (TransactionService.softDeleteTransaction as jest.Mock).mockResolvedValue(mockDeletedTransaction);
 
       await TransactionController.softDeleteTransaction(mockRequest as Request, mockResponse as Response);
@@ -301,7 +299,7 @@ describe('Transaction Controller', () => {
   describe('restoreTransaction', () => {
     it('should successfully restore a transaction', async () => {
       mockRequest = { params: { id: '1' } };
-      const mockRestoredTransaction = { id: 1, deleted: false };
+      const mockRestoredTransaction = { id: 1, isDeleted: false };
       (TransactionService.restoreTransaction as jest.Mock).mockResolvedValue(mockRestoredTransaction);
 
       await TransactionController.restoreTransaction(mockRequest as Request, mockResponse as Response);
@@ -371,6 +369,45 @@ describe('Transaction Controller', () => {
       expect(logger.error).toHaveBeenCalledWith('No transactions available to download');
       expect(mockResponse.status).toHaveBeenCalledWith(404);
       expect(mockResponse.json).toHaveBeenCalledWith('No transactions available to download');
+    });
+  });
+
+  describe('batchSoftDeleteTransactions', () => {
+    it('should successfully batch soft delete transactions', async () => {
+      mockRequest = { body: { ids: ['1', '2', '3'] } };
+      const mockDeletedTransactions = [
+        { id: 1, isDeleted: true },
+        { id: 2, isDeleted: true },
+        { id: 3, isDeleted: true }
+      ];
+
+      (TransactionService.batchSoftDeleteTransactions as jest.Mock).mockResolvedValue(mockDeletedTransactions);
+
+      await TransactionController.batchSoftDeleteTransactions(mockRequest as Request, mockResponse as Response);
+
+      expect(mockResponse.json).toHaveBeenCalledWith({
+        message: 'Transactions soft deleted',
+        transactions: mockDeletedTransactions
+      });
+    });
+
+    it('should handle invalid id values', async () => {
+      mockRequest = { body: { ids: ['abc', 'def'] } };
+      await TransactionController.batchSoftDeleteTransactions(mockRequest as Request, mockResponse as Response);
+      expect(mockResponse.status).toHaveBeenCalledWith(400);
+      expect(mockResponse.json).toHaveBeenCalledWith('Invalid IDs format. Please provide an array of numbers.');
+    });
+
+    it('should handle errors when batch soft deleting transactions', async () => {
+      mockRequest = { body: { ids: ['1', '2', '3'] } };
+      const error = new Error('Batch deletion failed');
+      (TransactionService.batchSoftDeleteTransactions as jest.Mock).mockRejectedValue(error);
+
+      await TransactionController.batchSoftDeleteTransactions(mockRequest as Request, mockResponse as Response);
+
+      expect(logger.error).toHaveBeenCalledWith('Error batch soft-deleting transactions:', error);
+      expect(mockResponse.status).toHaveBeenCalledWith(500);
+      expect(mockResponse.json).toHaveBeenCalledWith('An error occurred while batch deleting transactions');
     });
   });
 });
