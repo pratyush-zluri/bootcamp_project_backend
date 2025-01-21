@@ -6,239 +6,230 @@ import { validateCSVFile, validateCSVData } from '../../src/middlewares/csvMiddl
 // Mock dependencies
 jest.mock('fs/promises');
 jest.mock('papaparse');
-jest.mock('../../src/utils/logger');
+jest.mock('../../src/utils/logger', () => ({
+  error: jest.fn(),
+  info: jest.fn()
+}));
 
-describe('CSV Validation Middleware', () => {
+describe('CSV Validation Middlewares', () => {
   let mockRequest: Partial<Request>;
   let mockResponse: Partial<Response>;
-  let mockNext: jest.Mock<NextFunction>;
+  let nextFunction: NextFunction;
 
   beforeEach(() => {
-    jest.clearAllMocks();
-
+    mockRequest = {
+      file: {
+        path: 'test.csv',
+        mimetype: 'text/csv',
+        size: 1000,
+      },
+      body: {}
+    };
     mockResponse = {
       status: jest.fn().mockReturnThis(),
-      json: jest.fn(),
+      json: jest.fn()
     };
+    nextFunction = jest.fn();
+  });
 
-    mockNext = jest.fn();
+  afterEach(() => {
+    jest.clearAllMocks();
   });
 
   describe('validateCSVFile', () => {
-    it('should call next() if file exists', () => {
-      mockRequest = {
-        file: {
-          fieldname: 'file',
-          originalname: 'test.csv',
-          encoding: '7bit',
-          mimetype: 'text/csv',
-          destination: './uploads',
-          filename: 'test.csv',
-          path: './uploads/test.csv',
-          size: 1024,
-        },
-      };
-
-      validateCSVFile(mockRequest as Request, mockResponse as Response, mockNext);
-
-      expect(mockNext).toHaveBeenCalled();
+    it('should pass when file is present', () => {
+      validateCSVFile(mockRequest as Request, mockResponse as Response, nextFunction);
+      expect(nextFunction).toHaveBeenCalled();
     });
 
-    it('should return 400 if no file is uploaded', () => {
-      mockRequest = {
-        file: undefined,
-      };
-
-      validateCSVFile(mockRequest as Request, mockResponse as Response, mockNext);
-
+    it('should reject when no file is uploaded', () => {
+      mockRequest.file = undefined;
+      validateCSVFile(mockRequest as Request, mockResponse as Response, nextFunction);
       expect(mockResponse.status).toHaveBeenCalledWith(400);
-      expect(mockResponse.json).toHaveBeenCalledWith({ error: 'No file uploaded' });
-      expect(mockNext).not.toHaveBeenCalled();
+      expect(mockResponse.json).toHaveBeenCalledWith({ message: "No file uploaded" });
     });
   });
 
   describe('validateCSVData', () => {
-    it('should validate and process valid CSV data', async () => {
-      const validCSVContent = 'Date,Description,Amount,Currency\n2025-01-18,Test Transaction,100,USD';
-      const mockValidData = [{
-        Date: '2025-01-18',
-        Description: 'Test Transaction',
-        Amount: 100,
-        Currency: 'USD'
-      }];
-
-      mockRequest = {
-        file: {
-          path: './uploads/test.csv',
-          mimetype: 'text/csv',
-          size: 1000,
-        },
-      };
-
-      (fs.readFile as jest.Mock).mockResolvedValue(validCSVContent);
-      (Papa.parse as jest.Mock).mockReturnValue({
-        data: mockValidData,
-        errors: []
-      });
-
-      await validateCSVData(mockRequest as Request, mockResponse as Response, mockNext);
-
-      expect(mockRequest.body).toEqual({
-        validData: mockValidData,
-        errors: []
-      });
-      expect(mockNext).toHaveBeenCalled();
-    });
-
-    it('should handle dd-MM-yyyy date format', async () => {
-      const csvContent = 'Date,Description,Amount,Currency\n18-01-2025,Test Transaction,100,USD';
-      const expectedData = [{
-        Date: '18-01-2025',
-        Description: 'Test Transaction',
-        Amount: 100,
-        Currency: 'USD'
-      }];
-
-      mockRequest = {
-        file: {
-          path: './uploads/test.csv',
-          mimetype: 'text/csv',
-          size: 1000,
-        },
-      };
-
-      (fs.readFile as jest.Mock).mockResolvedValue(csvContent);
-      (Papa.parse as jest.Mock).mockReturnValue({
-        data: expectedData,
-        errors: []
-      });
-
-      await validateCSVData(mockRequest as Request, mockResponse as Response, mockNext);
-
-      expect(mockNext).toHaveBeenCalled();
-    });
-
-    it('should reject files larger than 1MB', async () => {
-      mockRequest = {
-        file: {
-          path: './uploads/test.csv',
-          mimetype: 'text/csv',
-          size: 2000000, // 2MB
-        },
-      };
-
-      await validateCSVData(mockRequest as Request, mockResponse as Response, mockNext);
-
+    it('should reject invalid file type', async () => {
+      mockRequest.file!.mimetype = 'text/plain';
+      await validateCSVData(mockRequest as Request, mockResponse as Response, nextFunction);
       expect(mockResponse.status).toHaveBeenCalledWith(400);
-      expect(mockResponse.json).toHaveBeenCalledWith({
-        error: 'File size exceeds the 1 MB limit.'
-      });
+      expect(mockResponse.json).toHaveBeenCalledWith({ message: "Invalid file type. Please upload a CSV file." });
     });
 
-    it('should reject non-CSV files', async () => {
-      mockRequest = {
-        file: {
-          path: './uploads/test.txt',
-          mimetype: 'text/plain',
-          size: 1000,
-        },
-      };
-
-      await validateCSVData(mockRequest as Request, mockResponse as Response, mockNext);
-
+    it('should reject file size exceeding limit', async () => {
+      mockRequest.file!.size = 2000000;
+      await validateCSVData(mockRequest as Request, mockResponse as Response, nextFunction);
       expect(mockResponse.status).toHaveBeenCalledWith(400);
-      expect(mockResponse.json).toHaveBeenCalledWith({
-        error: 'Invalid file type. Please upload a CSV file.'
-      });
+      expect(mockResponse.json).toHaveBeenCalledWith({ message: "File size exceeds the 1 MB limit." });
     });
 
-    it('should handle invalid date formats', async () => {
-      const invalidCSVContent = 'Date,Description,Amount,Currency\ninvalid-date,Test Transaction,100,USD';
-
-      mockRequest = {
-        file: {
-          path: './uploads/test.csv',
-          mimetype: 'text/csv',
-          size: 1000,
-        },
-      };
-
-      (fs.readFile as jest.Mock).mockResolvedValue(invalidCSVContent);
-      (Papa.parse as jest.Mock).mockReturnValue({
-        data: [{
-          Date: 'invalid-date',
-          Description: 'Test Transaction',
-          Amount: 100,
-          Currency: 'USD'
-        }],
-        errors: []
-      });
-
-      await validateCSVData(mockRequest as Request, mockResponse as Response, mockNext);
-
-      expect(mockResponse.status).toHaveBeenCalledWith(400);
-      expect(mockResponse.json).toHaveBeenCalledWith(
-        expect.objectContaining({
-          error: 'No valid transactions to upload',
-          errors: expect.arrayContaining([
-            expect.stringContaining('Invalid date format in row')
-          ])
-        })
-      );
-    });
-
-    it('should handle file read errors', async () => {
-      mockRequest = {
-        file: {
-          path: './uploads/test.csv',
-          mimetype: 'text/csv',
-          size: 1000,
-        },
-      };
-
+    it('should handle file read error', async () => {
       (fs.readFile as jest.Mock).mockRejectedValue(new Error('File read error'));
-
-      await validateCSVData(mockRequest as Request, mockResponse as Response, mockNext);
-
+      await validateCSVData(mockRequest as Request, mockResponse as Response, nextFunction);
       expect(mockResponse.status).toHaveBeenCalledWith(500);
-      expect(mockResponse.json).toHaveBeenCalledWith({
-        error: 'An error occurred while processing the CSV file'
+    });
+
+    it('should validate and convert dd-MM-yyyy date format', async () => {
+      const mockData = [{
+        Date: '01-12-2024',
+        Description: 'Test',
+        Amount: 100,
+        Currency: 'USD'
+      }];
+      (fs.readFile as jest.Mock).mockResolvedValue('csv content');
+      (Papa.parse as jest.Mock).mockReturnValue({
+        data: mockData,
+        errors: [],
+        meta: { delimiter: ',' }
+      });
+
+      await validateCSVData(mockRequest as Request, mockResponse as Response, nextFunction);
+      expect(nextFunction).toHaveBeenCalled();
+      expect(mockRequest.body).toHaveProperty('validData');
+      expect(mockRequest.body.validData[0]).toEqual({
+        Date: '01-12-2024',  // The date format conversion happens in the middleware
+        Description: 'Test',
+        Amount: 100,
+        Currency: 'USD'
       });
     });
 
-    it('should validate required fields', async () => {
-      const invalidCSVContent = 'Date,Description,Amount,Currency\n2025-01-18,,100,USD';
-
-      mockRequest = {
-        file: {
-          path: './uploads/test.csv',
-          mimetype: 'text/csv',
-          size: 1000,
-        },
-      };
-
-      (fs.readFile as jest.Mock).mockResolvedValue(invalidCSVContent);
+    it('should reject invalid date format', async () => {
+      const mockData = [{
+        Date: '2024/01/01',
+        Description: 'Test',
+        Amount: 100,
+        Currency: 'USD'
+      }];
+      (fs.readFile as jest.Mock).mockResolvedValue('csv content');
       (Papa.parse as jest.Mock).mockReturnValue({
-        data: [{
-          Date: '2025-01-18',
-          Description: '',
-          Amount: 100,
-          Currency: 'USD'
-        }],
-        errors: []
+        data: mockData,
+        errors: [],
+        meta: { delimiter: ',' }
       });
 
-      await validateCSVData(mockRequest as Request, mockResponse as Response, mockNext);
-
+      await validateCSVData(mockRequest as Request, mockResponse as Response, nextFunction);
       expect(mockResponse.status).toHaveBeenCalledWith(400);
-      expect(mockResponse.json).toHaveBeenCalledWith(
-        expect.objectContaining({
-          error: 'No valid transactions to upload',
-          errors: expect.arrayContaining([
-            expect.stringContaining('Validation error in row')
-          ])
-        })
-      );
+      expect(mockResponse.json).toHaveBeenCalledWith({
+        error: "No valid transactions to upload",
+        errors: expect.any(Array)
+      });
+    });
+
+    it('should reject invalid date value', async () => {
+      const mockData = [{
+        Date: '2024-13-45',
+        Description: 'Test',
+        Amount: 100,
+        Currency: 'USD'
+      }];
+      (fs.readFile as jest.Mock).mockResolvedValue('csv content');
+      (Papa.parse as jest.Mock).mockReturnValue({
+        data: mockData,
+        errors: [],
+        meta: { delimiter: ',' }
+      });
+
+      await validateCSVData(mockRequest as Request, mockResponse as Response, nextFunction);
+      expect(mockResponse.status).toHaveBeenCalledWith(400);
+      expect(mockResponse.json).toHaveBeenCalledWith({
+        error: "No valid transactions to upload",
+        errors: expect.any(Array)
+      });
+    });
+
+    it('should handle schema validation errors', async () => {
+      const mockData = [{
+        Date: '2024-01-01',
+        Description: '',  // Required field is empty
+        Amount: 'invalid', // Should be number
+        Currency: 'USD'
+      }];
+      (fs.readFile as jest.Mock).mockResolvedValue('csv content');
+      (Papa.parse as jest.Mock).mockReturnValue({
+        data: mockData,
+        errors: [],
+        meta: { delimiter: ',' }
+      });
+
+      await validateCSVData(mockRequest as Request, mockResponse as Response, nextFunction);
+      expect(mockResponse.status).toHaveBeenCalledWith(400);
+      expect(mockResponse.json).toHaveBeenCalledWith({
+        error: "No valid transactions to upload",
+        errors: expect.any(Array)
+      });
+    });
+
+    it('should reject when no valid data is present', async () => {
+      const mockData = [{
+        Date: 'invalid',
+        Description: '',
+        Amount: 'invalid',
+        Currency: ''
+      }];
+      (fs.readFile as jest.Mock).mockResolvedValue('csv content');
+      (Papa.parse as jest.Mock).mockReturnValue({
+        data: mockData,
+        errors: [],
+        meta: { delimiter: ',' }
+      });
+
+      await validateCSVData(mockRequest as Request, mockResponse as Response, nextFunction);
+      expect(mockResponse.status).toHaveBeenCalledWith(400);
+      expect(mockResponse.json).toHaveBeenCalledWith({
+        error: "No valid transactions to upload",
+        errors: expect.any(Array)
+      });
+      expect(fs.unlink).toHaveBeenCalledWith('test.csv');
+    });
+
+    it('should pass valid data with yyyy-MM-dd format', async () => {
+      const mockData = [{
+        Date: '2024-01-01',
+        Description: 'Test',
+        Amount: 100,
+        Currency: 'USD'
+      }];
+      (fs.readFile as jest.Mock).mockResolvedValue('csv content');
+      (Papa.parse as jest.Mock).mockReturnValue({
+        data: mockData,
+        errors: [],
+        meta: { delimiter: ',' }
+      });
+
+      await validateCSVData(mockRequest as Request, mockResponse as Response, nextFunction);
+      expect(nextFunction).toHaveBeenCalled();
+      expect(mockRequest.body.validData).toEqual(mockData);
+    });
+
+    it('should handle mixed valid and invalid data', async () => {
+      const mockData = [
+        {
+          Date: '2024-01-01',
+          Description: 'Valid',
+          Amount: 100,
+          Currency: 'USD'
+        },
+        {
+          Date: 'invalid',
+          Description: '',
+          Amount: 'invalid',
+          Currency: ''
+        }
+      ];
+      (fs.readFile as jest.Mock).mockResolvedValue('csv content');
+      (Papa.parse as jest.Mock).mockReturnValue({
+        data: mockData,
+        errors: [],
+        meta: { delimiter: ',' }
+      });
+
+      await validateCSVData(mockRequest as Request, mockResponse as Response, nextFunction);
+      expect(nextFunction).toHaveBeenCalled();
+      expect(mockRequest.body.validData).toHaveLength(1);
+      expect(mockRequest.body.errors).toHaveLength(1);
     });
   });
 });

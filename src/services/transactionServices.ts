@@ -52,9 +52,15 @@ class TransactionService {
         return [transactions, total];
     }
 
-    public async getSoftDeletedTransactions() {
+    public async getSoftDeletedTransactions(page: number, limit: number) {
         const em = await initORM();
-        return await em.find(Transaction, { isDeleted: true }, { orderBy: { date: 'DESC' } });
+        const offset = (page - 1) * limit;
+        const [transactions, total] = await em.findAndCount(Transaction, { isDeleted: true }, {
+            orderBy: { date: 'DESC' },
+            offset: offset,
+            limit: limit
+        });
+        return { transactions, total };
     }
 
     public async updateTransaction(id: number, data: { description?: string; originalAmount?: number; currency?: string; date?: string }) {
@@ -140,6 +146,46 @@ class TransactionService {
         }
 
         transactions.forEach(transaction => (transaction.isDeleted = true));
+        await em.flush();
+
+        return transactions;
+    }
+    public async searchAllTransactions(query: string) {
+        const em = await initORM();
+        const regex = new RegExp(query, 'i'); // Case-insensitive search
+
+        const transactions = await em.find(Transaction, {
+            $or: [
+                { description: regex },
+                { currency: regex },
+
+            ],
+            isDeleted: false
+        }, { orderBy: { date: 'DESC' } });
+
+        return transactions;
+    }
+
+    public async batchHardDeleteTransactions(ids: number[]) {
+        const em = await initORM();
+        const transactions = await em.find(Transaction, { id: { $in: ids }, isDeleted: true });
+        if (!transactions.length) {
+            throw new Error("No transactions found to delete");
+        }
+
+        await em.removeAndFlush(transactions);
+
+        return transactions;
+    }
+
+    public async batchRestoreTransactions(ids: number[]) {
+        const em = await initORM();
+        const transactions = await em.find(Transaction, { id: { $in: ids }, isDeleted: true });
+        if (!transactions.length) {
+            throw new Error("No transactions found to restore");
+        }
+
+        transactions.forEach(transaction => (transaction.isDeleted = false));
         await em.flush();
 
         return transactions;

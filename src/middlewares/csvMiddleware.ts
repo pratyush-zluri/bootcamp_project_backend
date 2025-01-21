@@ -22,7 +22,7 @@ const schema = Joi.object<Data>({
 const validateCSVFile = (req: Request, res: Response, next: NextFunction) => {
     const file = req.file;
     if (!file) {
-        res.status(400).json({ error: "No file uploaded" });
+        res.status(400).json({ message: "No file uploaded" });
         return;
     }
     next();
@@ -30,16 +30,12 @@ const validateCSVFile = (req: Request, res: Response, next: NextFunction) => {
 
 const validateCSVData = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const file = req.file;
-    if (!file) {
-        res.status(400).json({ error: "No file uploaded" });
-        return;
-    }
     if (file.mimetype !== "text/csv") {
-        res.status(400).json({ error: "Invalid file type. Please upload a CSV file." });
+        res.status(400).json({ message: "Invalid file type. Please upload a CSV file." });
         return;
     }
     if (file.size > 1048576) {
-        res.status(400).json({ error: "File size exceeds the 1 MB limit." });
+        res.status(400).json({ message: "File size exceeds the 1 MB limit." });
         return;
     }
     try {
@@ -104,7 +100,7 @@ const validateCSVData = async (req: Request, res: Response, next: NextFunction):
         next();
     } catch (err) {
         logger.error("Error processing CSV file:", err);
-        res.status(500).json({ error: "An error occurred while processing the CSV file" });
+        res.status(500).json({ message: "An error occurred while processing the CSV file" });
     }
 };
 

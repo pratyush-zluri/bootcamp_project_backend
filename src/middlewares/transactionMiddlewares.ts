@@ -25,7 +25,9 @@ export const idValidator = (req: Request, res: Response, next: NextFunction): vo
   const regex = /^[0-9]+$/;
 
   if (!idParam || !regex.test(idParam)) {
-    res.status(400).json("Enter a valid id");
+    res.status(400).json({
+      message: "Enter a valid ID"
+    });
     return;
   }
 
@@ -37,7 +39,9 @@ export const pageLimitValidator = (req: Request, res: Response, next: NextFuncti
   const limit = parseInt(req.query.limit as string, 10);
 
   if (isNaN(page) || isNaN(limit)) {
-    res.status(400).json("Page and limit must be numeric values");
+    res.status(400).json({
+      message: "Page and Limit must be numbers"
+    });
     return;
   }
 
@@ -45,12 +49,16 @@ export const pageLimitValidator = (req: Request, res: Response, next: NextFuncti
   const limitValue = limit || 10;
 
   if (page < 1 || limit < 1) {
-    res.status(400).json("Invalid page or limit value");
+    res.status(400).json({
+      message: "Enter valid page and limit"
+    });
     return;
   }
 
   if (limit > 500) {
-    res.status(400).json("Limit value too high");
+    res.status(400).json({
+      message: "Limit cannot be greater than 500"
+    });
     return;
   }
   req.query.page = page.toString();
@@ -62,7 +70,9 @@ export const pageLimitValidator = (req: Request, res: Response, next: NextFuncti
 export const newEntryValidator = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   const { error } = new_schema.validate(req.body);
   if (error) {
-    res.status(400).json(error.details[0].message);
+    res.status(400).json({
+      message: error.details[0].message
+    });
     return;
   }
 
@@ -91,7 +101,9 @@ export const newEntryValidator = async (req: Request, res: Response, next: NextF
     const existingTransaction = await em.findOne(Transaction, { date: transactionDate, description });
 
     if (existingTransaction) {
-      res.status(400).json("Transaction already exists");
+      res.status(400).json({
+        message: "A transaction with the same date and description already exists",
+      });
       return;
     }
     next();
@@ -104,7 +116,9 @@ export const newEntryValidator = async (req: Request, res: Response, next: NextF
 export const validateUpdate = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   const { error } = update_schema.validate(req.body);
   if (error) {
-    res.status(400).json(error.details[0].message);
+    res.status(400).json({
+      message: error.details[0].message
+    });
     return;
   }
 
@@ -179,7 +193,9 @@ export const checkSoftDeleted = async (req: Request, res: Response, next: NextFu
     const transaction = await em.findOne(Transaction, id);
 
     if (transaction && transaction.isDeleted) {
-      res.status(400).json("Cannot perform action on a soft-deleted transaction");
+      res.status(400).json({
+        message: "Cannot perform action on a soft-deleted transaction"
+      });
       return;
     }
     next();

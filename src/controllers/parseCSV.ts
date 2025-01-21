@@ -30,7 +30,7 @@ export const parseCsv = async (req: Request, res: Response): Promise<void> => {
     try {
         const em = await initORM();
         const { validData = [], errors = [] }: { validData: Data[]; errors: string[] } = req.body;
-        const repeats: Data[] = [];
+        const repeats = [];
         const transactions: Transaction[] = [];
         const seenEntries = new Set<string>();
 
@@ -133,7 +133,7 @@ export const parseCsv = async (req: Request, res: Response): Promise<void> => {
     } catch (err: any) {
         logger.error("Error processing CSV file:", err);
         res.status(500).json({
-            error: "An error occurred while processing the CSV file",
+            message: "An error occurred while processing the CSV file",
         });
     }
 };

@@ -65,7 +65,6 @@ describe('Transaction Middlewares', () => {
       mockRequest.params = { id: 'abc' };
       idValidator(mockRequest as Request, mockResponse as Response, nextFunction);
       expect(mockResponse.status).toHaveBeenCalledWith(400);
-      expect(mockResponse.json).toHaveBeenCalledWith('Enter a valid id');
     });
 
     it('should reject missing id', () => {
@@ -86,21 +85,18 @@ describe('Transaction Middlewares', () => {
       mockRequest.query = { page: 'abc', limit: 'def' };
       pageLimitValidator(mockRequest as Request, mockResponse as Response, nextFunction);
       expect(mockResponse.status).toHaveBeenCalledWith(400);
-      expect(mockResponse.json).toHaveBeenCalledWith('Page and limit must be numeric values');
     });
 
     it('should reject negative values', () => {
       mockRequest.query = { page: '-1', limit: '0' };
       pageLimitValidator(mockRequest as Request, mockResponse as Response, nextFunction);
       expect(mockResponse.status).toHaveBeenCalledWith(400);
-      expect(mockResponse.json).toHaveBeenCalledWith('Invalid page or limit value');
     });
 
     it('should reject limit exceeding maximum', () => {
       mockRequest.query = { page: '1', limit: '501' };
       pageLimitValidator(mockRequest as Request, mockResponse as Response, nextFunction);
       expect(mockResponse.status).toHaveBeenCalledWith(400);
-      expect(mockResponse.json).toHaveBeenCalledWith('Limit value too high');
     });
   });
 

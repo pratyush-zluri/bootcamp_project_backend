@@ -9,6 +9,9 @@ import {
     addTransaction,
     softDeleteTransaction,
     batchSoftDeleteTransactions,
+    searchAllTransactions,
+    batchHardDeleteTransactions,
+    batchRestoreTransactions,
 } from '../controllers/transactionControllers';
 import { parseCsv } from '../controllers/parseCSV';
 import multer from 'multer';
@@ -34,4 +37,8 @@ router.patch('/transactions/:id/soft-delete', idValidator, softDeleteTransaction
 router.patch('/transactions/:id/restore', idValidator, restoreTransaction);
 router.get('/transactions/export-csv', downloadTransactionsCSV);
 router.put('/transactions/batch-soft-delete', batchSoftDeleteTransactions);
+router.get('/transactions/search', searchAllTransactions);
+router.put('/transactions/batch-hard-delete', batchHardDeleteTransactions);
+router.put('/transactions/batch-restore', batchRestoreTransactions);
+
 export default router;

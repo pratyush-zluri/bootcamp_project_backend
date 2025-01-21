@@ -3,6 +3,7 @@ import { EntityManager } from '@mikro-orm/core';
 import { Transaction } from '../../src/entities/transactions';
 import initORM from '../../src/utils/init_ORM';
 import currencyConversionRates from "../../src/globals/currencyConversionRates";
+import { any } from 'joi';
 
 // Mock dependencies
 jest.mock('../../src/utils/init_ORM');
@@ -32,9 +33,12 @@ describe('TransactionService', () => {
     });
 
     describe('getConversionRate', () => {
-        it('should return correct conversion rate for valid currency', () => {
-            const rate = TransactionService.getConversionRate('USD');
-            expect(rate).toBe(75);
+        it('should return correct conversion rate for USD', () => {
+            expect(TransactionService.getConversionRate('USD')).toBe(75);
+        });
+
+        it('should return correct conversion rate for EUR', () => {
+            expect(TransactionService.getConversionRate('EUR')).toBe(85);
         });
 
         it('should throw error for invalid currency', () => {
@@ -54,27 +58,33 @@ describe('TransactionService', () => {
 
         it('should successfully add a valid transaction', async () => {
             const result = await TransactionService.addTransaction(validTransactionData);
-
             expect(mockEntityManager.persistAndFlush).toHaveBeenCalled();
             expect(result).toMatchObject({
                 description: validTransactionData.description,
                 originalAmount: validTransactionData.originalAmount,
                 currency: validTransactionData.currency,
                 amount_in_inr: validTransactionData.originalAmount * 75,
+                date: expect.any(Date)
             });
         });
 
         it('should throw error for invalid date', async () => {
             const invalidData = { ...validTransactionData, date: 'invalid-date' };
-
             await expect(TransactionService.addTransaction(invalidData)).rejects.toThrow(
                 'Invalid date format'
+            );
+        });
+
+        it('should throw error for invalid currency', async () => {
+            const invalidData = { ...validTransactionData, currency: 'INVALID' };
+            await expect(TransactionService.addTransaction(invalidData)).rejects.toThrow(
+                'Conversion rate for currency INVALID not found'
             );
         });
     });
 
     describe('getTransactions', () => {
-        it('should return paginated transactions', async () => {
+        it('should return paginated transactions for first page', async () => {
             const mockTransactions = [new Transaction(), new Transaction()];
             const mockTotal = 2;
             mockEntityManager.findAndCount.mockResolvedValue([mockTransactions, mockTotal]);
@@ -93,21 +103,70 @@ describe('TransactionService', () => {
             expect(transactions).toEqual(mockTransactions);
             expect(total).toBe(mockTotal);
         });
+
+        it('should return paginated transactions for second page', async () => {
+            const mockTransactions = [new Transaction()];
+            const mockTotal = 3;
+            mockEntityManager.findAndCount.mockResolvedValue([mockTransactions, mockTotal]);
+
+            const [transactions, total] = await TransactionService.getTransactions(2, 2);
+
+            expect(mockEntityManager.findAndCount).toHaveBeenCalledWith(
+                Transaction,
+                { isDeleted: false },
+                {
+                    orderBy: { date: 'DESC' },
+                    offset: 2,
+                    limit: 2,
+                }
+            );
+            expect(transactions).toEqual(mockTransactions);
+            expect(total).toBe(mockTotal);
+        });
+
+        it('should handle empty results', async () => {
+            mockEntityManager.findAndCount.mockResolvedValue([[], 0]);
+
+            const [transactions, total] = await TransactionService.getTransactions(1, 10);
+
+            expect(transactions).toEqual([]);
+            expect(total).toBe(0);
+        });
     });
 
     describe('getSoftDeletedTransactions', () => {
-        it('should return soft-deleted transactions', async () => {
+        it('should return paginated soft-deleted transactions', async () => {
             const mockTransactions = [new Transaction(), new Transaction()];
-            mockEntityManager.find.mockResolvedValue(mockTransactions);
+            const mockTotal = 2;
+            mockEntityManager.findAndCount.mockResolvedValue([mockTransactions, mockTotal]);
 
-            const result = await TransactionService.getSoftDeletedTransactions();
+            const result = await TransactionService.getSoftDeletedTransactions(1, 10);
 
-            expect(mockEntityManager.find).toHaveBeenCalledWith(
+            expect(mockEntityManager.findAndCount).toHaveBeenCalledWith(
                 Transaction,
                 { isDeleted: true },
-                { orderBy: { date: 'DESC' } }
+                {
+                    orderBy: { date: 'DESC' },
+                    offset: 0,
+                    limit: 10,
+                }
             );
-            expect(result).toEqual(mockTransactions);
+            expect(result).toEqual({
+                transactions: mockTransactions,
+                total: mockTotal
+            });
+        });
+
+
+        it('should handle empty results', async () => {
+            mockEntityManager.findAndCount.mockResolvedValue([[], 0]);
+
+            const result = await TransactionService.getSoftDeletedTransactions(1, 10);
+
+            expect(result).toEqual({
+                transactions: [],
+                total: 0
+            });
         });
     });
 
@@ -118,9 +177,11 @@ describe('TransactionService', () => {
         mockTransaction.originalAmount = 100;
         mockTransaction.isDeleted = false;
 
-        it('should successfully update a transaction', async () => {
+        beforeEach(() => {
             mockEntityManager.findOne.mockResolvedValue(mockTransaction);
+        });
 
+        it('should update all fields when all data provided', async () => {
             const updateData = {
                 description: 'Updated Description',
                 originalAmount: 200,
@@ -130,10 +191,13 @@ describe('TransactionService', () => {
 
             const result = await TransactionService.updateTransaction(1, updateData);
 
-            expect(result.description).toBe(updateData.description);
-            expect(result.originalAmount).toBe(updateData.originalAmount);
-            expect(result.currency).toBe(updateData.currency);
-            expect(result.amount_in_inr).toBe(updateData.originalAmount * 85);
+            expect(result).toMatchObject({
+                description: updateData.description,
+                originalAmount: updateData.originalAmount,
+                currency: updateData.currency,
+                amount_in_inr: updateData.originalAmount * 85,
+                date: expect.any(Date)
+            });
             expect(mockEntityManager.flush).toHaveBeenCalled();
         });
 
@@ -145,7 +209,8 @@ describe('TransactionService', () => {
         });
 
         it('should throw error when updating soft-deleted transaction', async () => {
-            const deletedTransaction = { ...mockTransaction, isDeleted: true };
+            const deletedTransaction = new Transaction();
+            deletedTransaction.isDeleted = true;
             mockEntityManager.findOne.mockResolvedValue(deletedTransaction);
 
             await expect(TransactionService.updateTransaction(1, { description: 'test' }))
@@ -153,10 +218,13 @@ describe('TransactionService', () => {
         });
 
         it('should throw error for invalid date', async () => {
-            mockEntityManager.findOne.mockResolvedValue(mockTransaction);
-
             await expect(TransactionService.updateTransaction(1, { date: 'invalid-date' }))
                 .rejects.toThrow('Invalid date format');
+        });
+
+        it('should throw error for invalid currency', async () => {
+            await expect(TransactionService.updateTransaction(1, { currency: 'INVALID' }))
+                .rejects.toThrow('Conversion rate for currency INVALID not found');
         });
     });
 
@@ -167,6 +235,7 @@ describe('TransactionService', () => {
 
             await TransactionService.deleteTransaction(1);
 
+            expect(mockEntityManager.findOne).toHaveBeenCalledWith(Transaction, 1);
             expect(mockEntityManager.removeAndFlush).toHaveBeenCalledWith(mockTransaction);
         });
 
@@ -179,10 +248,9 @@ describe('TransactionService', () => {
     });
 
     describe('softDeleteTransaction', () => {
-        const mockTransaction = new Transaction();
-        mockTransaction.isDeleted = false;
-
         it('should successfully soft delete a transaction', async () => {
+            const mockTransaction = new Transaction();
+            mockTransaction.isDeleted = false;
             mockEntityManager.findOne.mockResolvedValue(mockTransaction);
 
             const result = await TransactionService.softDeleteTransaction(1);
@@ -199,8 +267,9 @@ describe('TransactionService', () => {
         });
 
         it('should throw error when transaction already soft-deleted', async () => {
-            const deletedTransaction = { ...mockTransaction, isDeleted: true };
-            mockEntityManager.findOne.mockResolvedValue(deletedTransaction);
+            const mockTransaction = new Transaction();
+            mockTransaction.isDeleted = true;
+            mockEntityManager.findOne.mockResolvedValue(mockTransaction);
 
             await expect(TransactionService.softDeleteTransaction(1))
                 .rejects.toThrow('Transaction already soft-deleted');
@@ -208,10 +277,9 @@ describe('TransactionService', () => {
     });
 
     describe('restoreTransaction', () => {
-        const mockTransaction = new Transaction();
-        mockTransaction.isDeleted = true;
-
         it('should successfully restore a transaction', async () => {
+            const mockTransaction = new Transaction();
+            mockTransaction.isDeleted = true;
             mockEntityManager.findOne.mockResolvedValue(mockTransaction);
 
             const result = await TransactionService.restoreTransaction(1);
@@ -220,7 +288,7 @@ describe('TransactionService', () => {
             expect(mockEntityManager.flush).toHaveBeenCalled();
         });
 
-        it('should throw error when transaction not found or not soft-deleted', async () => {
+        it('should throw error when transaction not found', async () => {
             mockEntityManager.findOne.mockResolvedValue(null);
 
             await expect(TransactionService.restoreTransaction(1))
@@ -240,6 +308,14 @@ describe('TransactionService', () => {
                 { isDeleted: false }
             );
             expect(result).toEqual(mockTransactions);
+        });
+
+        it('should handle empty results', async () => {
+            mockEntityManager.find.mockResolvedValue([]);
+
+            const result = await TransactionService.getTransactionsCSV();
+
+            expect(result).toEqual([]);
         });
     });
 
@@ -263,6 +339,143 @@ describe('TransactionService', () => {
 
             await expect(TransactionService.batchSoftDeleteTransactions([1, 2]))
                 .rejects.toThrow('No transactions found to delete');
+        });
+    });
+
+    describe('searchAllTransactions', () => {
+        it('should return matching transactions', async () => {
+            const mockTransactions = [
+                { description: 'Test Transaction', currency: 'USD' },
+                { description: 'Another Test', currency: 'EUR' }
+            ];
+            mockEntityManager.find.mockResolvedValue(mockTransactions);
+
+            const result = await TransactionService.searchAllTransactions('Test');
+
+            expect(mockEntityManager.find).toHaveBeenCalledWith(
+                Transaction,
+                {
+                    $or: [
+                        { description: expect.any(RegExp) },
+                        { currency: expect.any(RegExp) }
+                    ],
+                    isDeleted: false
+                },
+                { orderBy: { date: 'DESC' } }
+            );
+            expect(result).toEqual(mockTransactions);
+        });
+
+        it('should handle empty results', async () => {
+            mockEntityManager.find.mockResolvedValue([]);
+
+            const result = await TransactionService.searchAllTransactions('NonExistent');
+
+            expect(result).toEqual([]);
+        });
+
+        it('should perform case-insensitive search', async () => {
+            const mockTransactions = [{ description: 'TEST TRANSACTION', currency: 'USD' }];
+            mockEntityManager.find.mockResolvedValue(mockTransactions);
+
+            const result = await TransactionService.searchAllTransactions('test');
+
+            expect(result).toEqual(mockTransactions);
+        });
+    });
+
+    describe('batchHardDeleteTransactions', () => {
+        it('should successfully hard delete multiple transactions', async () => {
+            const mockTransactions = [
+                new Transaction(),
+                new Transaction()
+            ];
+            mockEntityManager.find.mockResolvedValue(mockTransactions);
+
+            const result = await TransactionService.batchHardDeleteTransactions([1, 2]);
+
+            expect(mockEntityManager.find).toHaveBeenCalledWith(
+                Transaction,
+                { id: { $in: [1, 2] }, isDeleted: true }
+            );
+            expect(mockEntityManager.removeAndFlush).toHaveBeenCalledWith(mockTransactions);
+            expect(result).toEqual(mockTransactions);
+        });
+
+        it('should throw error when no transactions found', async () => {
+            mockEntityManager.find.mockResolvedValue([]);
+
+            await expect(TransactionService.batchHardDeleteTransactions([1, 2]))
+                .rejects.toThrow('No transactions found to delete');
+        });
+
+        it('should handle single transaction deletion', async () => {
+            const mockTransaction = new Transaction();
+            mockEntityManager.find.mockResolvedValue([mockTransaction]);
+
+            const result = await TransactionService.batchHardDeleteTransactions([1]);
+
+            expect(mockEntityManager.find).toHaveBeenCalledWith(
+                Transaction,
+                { id: { $in: [1] }, isDeleted: true }
+            );
+            expect(mockEntityManager.removeAndFlush).toHaveBeenCalledWith([mockTransaction]);
+            expect(result).toEqual([mockTransaction]);
+        });
+    });
+
+    describe('batchRestoreTransactions', () => {
+        it('should successfully restore multiple transactions', async () => {
+            const mockTransactions = [
+                { ...new Transaction(), isDeleted: true },
+                { ...new Transaction(), isDeleted: true }
+            ];
+            mockEntityManager.find.mockResolvedValue(mockTransactions);
+
+            const result = await TransactionService.batchRestoreTransactions([1, 2]);
+
+            expect(mockEntityManager.find).toHaveBeenCalledWith(
+                Transaction,
+                { id: { $in: [1, 2] }, isDeleted: true }
+            );
+            expect(result.every(t => !t.isDeleted)).toBe(true);
+            expect(mockEntityManager.flush).toHaveBeenCalled();
+        });
+
+        it('should throw error when no transactions found', async () => {
+            mockEntityManager.find.mockResolvedValue([]);
+
+            await expect(TransactionService.batchRestoreTransactions([1, 2]))
+                .rejects.toThrow('No transactions found to restore');
+        });
+
+        it('should handle single transaction restoration', async () => {
+            const mockTransaction = { ...new Transaction(), isDeleted: true };
+            mockEntityManager.find.mockResolvedValue([mockTransaction]);
+
+            const result = await TransactionService.batchRestoreTransactions([1]);
+
+            expect(mockEntityManager.find).toHaveBeenCalledWith(
+                Transaction,
+                { id: { $in: [1] }, isDeleted: true }
+            );
+            expect(result[0].isDeleted).toBe(false);
+            expect(mockEntityManager.flush).toHaveBeenCalled();
+        });
+
+        it('should update isDeleted flag for all transactions', async () => {
+            const mockTransactions = [
+                { ...new Transaction(), isDeleted: true, id: 1 },
+                { ...new Transaction(), isDeleted: true, id: 2 },
+                { ...new Transaction(), isDeleted: true, id: 3 }
+            ];
+            mockEntityManager.find.mockResolvedValue(mockTransactions);
+
+            const result = await TransactionService.batchRestoreTransactions([1, 2, 3]);
+
+            expect(result.length).toBe(3);
+            expect(result.every(t => !t.isDeleted)).toBe(true);
+            expect(mockEntityManager.flush).toHaveBeenCalled();
         });
     });
 });

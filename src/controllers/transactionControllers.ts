@@ -9,7 +9,7 @@ export const addTransaction = async (req: Request, res: Response): Promise<void>
         const { description, originalAmount, currency, date } = req.body;
 
         if (!description || !originalAmount || !currency || !date) {
-            res.status(400).json('Missing required fields');
+            res.status(400).json({ message: 'Missing required fields' });
             return;
         }
 
@@ -18,9 +18,9 @@ export const addTransaction = async (req: Request, res: Response): Promise<void>
     } catch (err: any) {
         logger.error("Error adding transaction:", err);
         if (err.message && err.message.startsWith(`Conversion rate for currency`)) {
-            res.status(400).json({ error: `${err.message}` });
+            res.status(400).json({ message: `${err.message}` });
         } else {
-            res.status(500).json({ error: 'An error occurred while adding the transaction' });
+            res.status(500).json({ message: 'An error occurred while adding the transaction' });
         }
     }
 
@@ -35,7 +35,7 @@ export const getTransactions = async (req: Request, res: Response): Promise<void
 
         if (typeof total !== 'number') {
             logger.error('Invalid total count:', total);
-            res.status(500).json('An error occurred while fetching transactions');
+            res.status(500).json({ message: 'An error occurred while fetching transactions' });
             return;
         }
 
@@ -48,22 +48,26 @@ export const getTransactions = async (req: Request, res: Response): Promise<void
         });
     } catch (err) {
         logger.error('Error fetching transactions:', err);
-        res.status(500).json({ error: 'An error occurred while fetching transactions' });
+        res.status(500).json({ message: 'An error occurred while fetching transactions' });
     }
 };
 
 // Get Soft Deleted Transactions
-export const getSoftDeletedTransactions = async (req: Request, res: Response): Promise<void> => {
+export const getSoftDeletedTransactions = async (req: Request, res: Response) => {
     try {
-        const data = await TransactionService.getSoftDeletedTransactions();
-        if (data.length === 0) {
-            res.status(404).json('No transactions found');
-            return;
-        }
-        res.send(data);
+        const page = parseInt(req.query.page as string, 10) || 1;
+        const limit = parseInt(req.query.limit as string, 10) || 10;
+        const { transactions, total } = await TransactionService.getSoftDeletedTransactions(page, limit);
+        res.status(200).json({
+            transactions,
+            total,
+            page,
+            limit,
+            totalPages: Math.ceil(total / limit)
+        });
     } catch (err) {
-        logger.error("Error fetching transactions:", err);
-        res.status(500).json('An error occurred while fetching transactions');
+        logger.error("Error fetching soft-deleted transactions:", err);
+        res.status(500).json({ message: 'An error occurred while fetching soft-deleted transactions' });
     }
 };
 
@@ -76,16 +80,16 @@ export const updateTransaction = async (req: Request, res: Response): Promise<vo
         res.status(200).json({ message: "Transaction updated successfully", transaction });
     } catch (err: any) {
         if (err.message === "Transaction not found") {
-            res.status(404).json({ error: "Transaction not found" });
+            res.status(404).json({ message: "Transaction not found" });
         } else if (err.message.startsWith("Conversion rate for currency")) {
-            res.status(400).json({ error: err.message });
+            res.status(400).json({ message: err.message });
         } else if (err.message === "Invalid date format") {
-            res.status(400).json({ error: "Invalid date format" });
+            res.status(400).json({ message: "Invalid date format" });
         } else if (err.message === "Cannot update a soft-deleted transaction") {
-            res.status(403).json({ error: "Transaction is soft-deleted and cannot be updated" });
+            res.status(403).json({ message: "Transaction is soft-deleted and cannot be updated" });
         } else {
             logger.error("Error updating transaction:", err);
-            res.status(500).json('An error occurred while updating the transaction');
+            res.status(500).json({ message: 'An error occurred while updating the transaction' });
         }
     }
 };
@@ -96,18 +100,18 @@ export const deleteTransaction = async (req: Request, res: Response): Promise<vo
         const id = parseInt(req.params.id);
 
         if (isNaN(id)) {
-            res.status(400).json('Invalid id format');
+            res.status(400).json({ message: 'Invalid id format' });
             return;
         }
 
         await TransactionService.deleteTransaction(id);
-        res.status(200).json('Transaction deleted successfully');
+        res.status(200).json({ message: 'Transaction deleted successfully' });
     } catch (err: any) {
         if (err.message === "Transaction not found") {
-            res.status(404).json({ error: "Transaction not found" });
+            res.status(404).json({ message: "Transaction not found" });
         } else {
             logger.error("Error deleting transaction:", err);
-            res.status(500).json('An error occurred while deleting the transaction');
+            res.status(500).json({ message: 'An error occurred while deleting the transaction' });
         }
     }
 };
@@ -118,7 +122,7 @@ export const softDeleteTransaction = async (req: Request, res: Response): Promis
         const id = parseInt(req.params.id);
 
         if (isNaN(id)) {
-            res.status(400).json('Invalid id format');
+            res.status(400).json({ message: 'Invalid id format' });
             return;
         }
 
@@ -126,12 +130,12 @@ export const softDeleteTransaction = async (req: Request, res: Response): Promis
         res.json({ message: "Transaction soft deleted", transaction });
     } catch (err: any) {
         if (err.message === "Transaction not found") {
-            res.status(404).json({ error: "Transaction not found" });
+            res.status(404).json({ message: "Transaction not found" });
         } else if (err.message === "Transaction already soft-deleted") {
-            res.status(400).json({ error: "Transaction already soft-deleted" });
+            res.status(400).json({ message: "Transaction already soft-deleted" });
         } else {
             logger.error("Error soft-deleting transaction:", err);
-            res.status(500).json('An error occurred while deleting the transaction');
+            res.status(500).json({ message: 'An error occurred while deleting the transaction' });
         }
     }
 };
@@ -142,7 +146,7 @@ export const restoreTransaction = async (req: Request, res: Response): Promise<v
         const id = parseInt(req.params.id);
 
         if (isNaN(id)) {
-            res.status(400).json('Invalid id format');
+            res.status(400).json({ message: 'Invalid id format' });
             return;
         }
 
@@ -150,7 +154,7 @@ export const restoreTransaction = async (req: Request, res: Response): Promise<v
         res.status(200).json({ message: "Transaction restored successfully", transaction });
     } catch (err: any) {
         if (err.message === "Transaction not found or not soft-deleted") {
-            res.status(404).json({ error: "Transaction not found or not soft-deleted" });
+            res.status(404).json({ message: "Transaction not found or not soft-deleted" });
         } else {
             logger.error("Error restoring transaction:", err);
             res.status(500).json("An error occurred while restoring the transaction");
@@ -164,7 +168,7 @@ export const downloadTransactionsCSV = async (req: Request, res: Response): Prom
         const transactions = await TransactionService.getTransactionsCSV();
         if (transactions.length === 0) {
             logger.error('No transactions available to download');
-            res.status(404).json('No transactions available to download');
+            res.status(404).json({ message: 'No transactions available to download' });
             return;
         }
         const csv = await parseAsync(transactions, { fields: ['id', 'date', 'description', 'originalAmount', 'currency', 'amount_in_inr'] });
@@ -173,7 +177,7 @@ export const downloadTransactionsCSV = async (req: Request, res: Response): Prom
         res.send(csv);
     } catch (err) {
         logger.error("Error downloading transactions as CSV:", err);
-        res.status(500).json('An error occurred while downloading transactions');
+        res.status(500).json({ message: 'An error occurred while downloading transactions' });
     }
 };
 
@@ -187,7 +191,7 @@ export const batchSoftDeleteTransactions = async (req: Request, res: Response): 
 
         // Validate that all IDs are numbers
         if (!Array.isArray(parsedIds) || parsedIds.some(isNaN)) {
-            res.status(400).json("Invalid IDs format. Please provide an array of numbers.");
+            res.status(400).json({ message: "Invalid IDs format. Please provide an array of numbers." });
             return;
         }
 
@@ -196,6 +200,61 @@ export const batchSoftDeleteTransactions = async (req: Request, res: Response): 
         res.json({ message: "Transactions soft deleted", transactions });
     } catch (err: any) {
         logger.error("Error batch soft-deleting transactions:", err);
-        res.status(500).json('An error occurred while batch deleting transactions');
+        res.status(500).json({ message: 'An error occurred while batch deleting transactions' });
+    }
+};
+
+export const searchAllTransactions = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const query = req.query.query as string;
+        const transactions = await TransactionService.searchAllTransactions(query);
+        res.status(200).json(transactions);
+    } catch (err: any) {
+        logger.error("Error searching transactions:", err);
+        res.status(500).json({ message: 'An error occurred while searching transactions' });
+    }
+};
+
+export const batchHardDeleteTransactions = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { ids }: { ids: string[] } = req.body; // Explicitly type 'ids' as an array of strings
+
+        // Parse the IDs to integers
+        const parsedIds = ids.map((id: string) => parseInt(id, 10)); // Explicitly type 'id' as a string
+
+        // Validate that all IDs are numbers
+        if (!Array.isArray(parsedIds) || parsedIds.some(isNaN)) {
+            res.status(400).json({ message: "Invalid IDs format. Please provide an array of numbers." });
+            return;
+        }
+
+        // Proceed with the batch hard delete
+        await TransactionService.batchHardDeleteTransactions(parsedIds);
+        res.json({ message: "Transactions permanently deleted" });
+    } catch (err: any) {
+        logger.error("Error batch hard deleting transactions:", err);
+        res.status(500).json({ message: 'An error occurred while batch deleting transactions' });
+    }
+};
+
+export const batchRestoreTransactions = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { ids }: { ids: string[] } = req.body; // Explicitly type 'ids' as an array of strings
+
+        // Parse the IDs to integers
+        const parsedIds = ids.map((id: string) => parseInt(id, 10)); // Explicitly type 'id' as a string
+
+        // Validate that all IDs are numbers
+        if (!Array.isArray(parsedIds) || parsedIds.some(isNaN)) {
+            res.status(400).json({ message: "Invalid IDs format. Please provide an array of numbers." });
+            return;
+        }
+
+        // Proceed with the batch restore
+        await TransactionService.batchRestoreTransactions(parsedIds);
+        res.json({ message: "Transactions restored" });
+    } catch (err: any) {
+        logger.error("Error batch restoring transactions:", err);
+        res.status(500).json({ message: 'An error occurred while batch restoring transactions' });
     }
 };
