@@ -5,3 +5,4 @@ uploads
 coverage
 public
 __mocks__
+.vscode

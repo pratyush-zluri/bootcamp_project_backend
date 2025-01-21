@@ -2,7 +2,7 @@ import { EntityManager } from '@mikro-orm/core';
 import { Transaction } from '../entities/transactions';
 import initORM from '../utils/init_ORM';
 import currencyConversionRates from "../globals/currencyConversionRates";
-import { isValid, parseISO } from 'date-fns';
+import { isValid } from 'date-fns';
 
 class TransactionService {
 
@@ -39,11 +39,17 @@ class TransactionService {
         const em: EntityManager = await initORM();
         const offset: number = (page - 1) * limit;
 
-        return await em.find(Transaction, { isDeleted: false }, {
-            orderBy: { date: 'DESC' },
-            offset: offset,
-            limit: limit,
-        });
+        const [transactions, total] = await em.findAndCount(
+            Transaction,
+            { isDeleted: false },
+            {
+                orderBy: { date: 'DESC' },
+                offset: offset,
+                limit: limit,
+            }
+        );
+
+        return [transactions, total];
     }
 
     public async getSoftDeletedTransactions() {
@@ -85,6 +91,7 @@ class TransactionService {
         await em.flush();
         return transaction;
     }
+
     public async deleteTransaction(id: number) {
         const em = await initORM();
         const transaction = await em.findOne(Transaction, id);
@@ -122,6 +129,19 @@ class TransactionService {
     public async getTransactionsCSV() {
         const em = await initORM();
         const transactions = await em.find(Transaction, { isDeleted: false });
+        return transactions;
+    }
+
+    public async batchSoftDeleteTransactions(ids: number[]) {
+        const em = await initORM();
+        const transactions = await em.find(Transaction, { id: { $in: ids }, isDeleted: false });
+        if (!transactions.length) {
+            throw new Error("No transactions found to delete");
+        }
+
+        transactions.forEach(transaction => (transaction.isDeleted = true));
+        await em.flush();
+
         return transactions;
     }
 }

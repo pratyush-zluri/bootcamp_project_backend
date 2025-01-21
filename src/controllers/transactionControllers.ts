@@ -3,6 +3,7 @@ import TransactionService from '../services/transactionServices';
 import { parseAsync } from 'json2csv';
 import logger from '../utils/logger';
 
+// Add Transaction
 export const addTransaction = async (req: Request, res: Response): Promise<void> => {
     try {
         const { description, originalAmount, currency, date } = req.body;
@@ -14,34 +15,44 @@ export const addTransaction = async (req: Request, res: Response): Promise<void>
 
         const transaction = await TransactionService.addTransaction({ description, originalAmount, currency, date });
         res.status(201).json(transaction);
-    } catch (err) {
+    } catch (err: any) {
         logger.error("Error adding transaction:", err);
-        res.status(500).json('An error occurred while adding the transaction');
+        if (err.message && err.message.startsWith(`Conversion rate for currency`)) {
+            res.status(400).json({ error: `${err.message}` });
+        } else {
+            res.status(500).json({ error: 'An error occurred while adding the transaction' });
+        }
     }
+
 };
 
+// Get Transactions
 export const getTransactions = async (req: Request, res: Response): Promise<void> => {
     try {
         const page: number = parseInt(req.query.page as string, 10) || 1;
         const limit: number = parseInt(req.query.limit as string, 10) || 10;
+        const [transactions, total] = await TransactionService.getTransactions(page, limit);
 
-        if (isNaN(page) || isNaN(limit)) {
-            res.status(400).json('Invalid page or limit values');
+        if (typeof total !== 'number') {
+            logger.error('Invalid total count:', total);
+            res.status(500).json('An error occurred while fetching transactions');
             return;
         }
 
-        const data = await TransactionService.getTransactions(page, limit);
-        if (data.length === 0) {
-            res.status(404).json('No transactions found');
-            return;
-        }
-        res.send(data);
+        res.status(200).json({
+            transactions,
+            total,
+            page,
+            limit,
+            totalPages: Math.ceil(total / limit),
+        });
     } catch (err) {
-        logger.error("Error fetching transactions:", err);
-        res.status(500).json('An error occurred while fetching transactions');
+        logger.error('Error fetching transactions:', err);
+        res.status(500).json({ error: 'An error occurred while fetching transactions' });
     }
 };
 
+// Get Soft Deleted Transactions
 export const getSoftDeletedTransactions = async (req: Request, res: Response): Promise<void> => {
     try {
         const data = await TransactionService.getSoftDeletedTransactions();
@@ -56,16 +67,11 @@ export const getSoftDeletedTransactions = async (req: Request, res: Response): P
     }
 };
 
+// Update Transaction
 export const updateTransaction = async (req: Request, res: Response): Promise<void> => {
     try {
         const id = parseInt(req.params.id);
         const { description, originalAmount, currency, date } = req.body;
-
-        if (!description || !originalAmount || !currency || !date) {
-            res.status(400).json('Missing required fields');
-            return;
-        }
-
         const transaction = await TransactionService.updateTransaction(id, { description, originalAmount, currency, date });
         res.status(200).json({ message: "Transaction updated successfully", transaction });
     } catch (err: any) {
@@ -84,6 +90,7 @@ export const updateTransaction = async (req: Request, res: Response): Promise<vo
     }
 };
 
+// Delete Transaction
 export const deleteTransaction = async (req: Request, res: Response): Promise<void> => {
     try {
         const id = parseInt(req.params.id);
@@ -105,6 +112,7 @@ export const deleteTransaction = async (req: Request, res: Response): Promise<vo
     }
 };
 
+// Soft Delete Transaction
 export const softDeleteTransaction = async (req: Request, res: Response): Promise<void> => {
     try {
         const id = parseInt(req.params.id);
@@ -128,6 +136,7 @@ export const softDeleteTransaction = async (req: Request, res: Response): Promis
     }
 };
 
+// Restore Transaction
 export const restoreTransaction = async (req: Request, res: Response): Promise<void> => {
     try {
         const id = parseInt(req.params.id);
@@ -149,6 +158,7 @@ export const restoreTransaction = async (req: Request, res: Response): Promise<v
     }
 };
 
+// Download Transactions as CSV
 export const downloadTransactionsCSV = async (req: Request, res: Response): Promise<void> => {
     try {
         const transactions = await TransactionService.getTransactionsCSV();
@@ -164,5 +174,28 @@ export const downloadTransactionsCSV = async (req: Request, res: Response): Prom
     } catch (err) {
         logger.error("Error downloading transactions as CSV:", err);
         res.status(500).json('An error occurred while downloading transactions');
+    }
+};
+
+// Batch Soft Delete Transactions
+export const batchSoftDeleteTransactions = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { ids }: { ids: string[] } = req.body; // Explicitly type 'ids' as an array of strings
+
+        // Parse the IDs to integers
+        const parsedIds = ids.map((id: string) => parseInt(id, 10)); // Explicitly type 'id' as a string
+
+        // Validate that all IDs are numbers
+        if (!Array.isArray(parsedIds) || parsedIds.some(isNaN)) {
+            res.status(400).json({ error: "Invalid IDs format. Please provide an array of numbers." });
+            return;
+        }
+
+        // Proceed with the batch soft delete
+        const transactions = await TransactionService.batchSoftDeleteTransactions(parsedIds);
+        res.json({ message: "Transactions soft deleted", transactions });
+    } catch (err: any) {
+        logger.error("Error batch soft-deleting transactions:", err);
+        res.status(500).json('An error occurred while batch deleting transactions');
     }
 };

@@ -53,6 +53,8 @@ export const pageLimitValidator = (req: Request, res: Response, next: NextFuncti
     res.status(400).json("Limit value too high");
     return;
   }
+  req.query.page = page.toString();
+  req.query.limit = limit.toString();
 
   next();
 };
@@ -172,8 +174,7 @@ export const validateUpdate = async (req: Request, res: Response, next: NextFunc
 
 export const checkSoftDeleted = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const orm = await MikroORM.init();
-    const em = orm.em.fork();
+    const em = await initORM();
     const id = parseInt(req.params.id);
     const transaction = await em.findOne(Transaction, id);
 

@@ -1,15 +1,20 @@
+// orm.ts
 import { MikroORM } from "@mikro-orm/postgresql";
 import config from "../../mikro-orm.config";
 import { Transaction } from "../entities/transactions";
+let orm: MikroORM;
+
 export default async function initORM() {
-    try {
-        const orm = await MikroORM.init({
+    if (!orm) {
+        orm = await MikroORM.init({
             ...config,
-            entities: [Transaction]
+            entities: [Transaction],
+            debug: false, // Disable verbose logging for performance
+            pool: {
+                min: 2, // Connection pooling
+                max: 10,
+            },
         });
-        return orm.em.fork();
-    } catch (err) {
-        console.error("Error initializing ORM:", err);
-        throw new Error("Database connection error");
     }
+    return orm.em.fork();
 }
