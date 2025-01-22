@@ -157,7 +157,6 @@ describe('TransactionService', () => {
             });
         });
 
-
         it('should handle empty results', async () => {
             mockEntityManager.findAndCount.mockResolvedValue([[], 0]);
 
@@ -343,16 +342,17 @@ describe('TransactionService', () => {
     });
 
     describe('searchAllTransactions', () => {
-        it('should return matching transactions', async () => {
+        it('should return matching transactions with pagination', async () => {
             const mockTransactions = [
                 { description: 'Test Transaction', currency: 'USD' },
                 { description: 'Another Test', currency: 'EUR' }
             ];
-            mockEntityManager.find.mockResolvedValue(mockTransactions);
+            const mockTotal = 2;
+            mockEntityManager.findAndCount.mockResolvedValue([mockTransactions, mockTotal]);
 
-            const result = await TransactionService.searchAllTransactions('Test');
+            const result = await TransactionService.searchAllTransactions('Test', 1, 10);
 
-            expect(mockEntityManager.find).toHaveBeenCalledWith(
+            expect(mockEntityManager.findAndCount).toHaveBeenCalledWith(
                 Transaction,
                 {
                     $or: [
@@ -361,26 +361,31 @@ describe('TransactionService', () => {
                     ],
                     isDeleted: false
                 },
-                { orderBy: { date: 'DESC' } }
+                {
+                    orderBy: { date: 'DESC' },
+                    offset: 0,
+                    limit: 10
+                }
             );
-            expect(result).toEqual(mockTransactions);
+            expect(result).toEqual({ transactions: mockTransactions, total: mockTotal });
         });
 
-        it('should handle empty results', async () => {
-            mockEntityManager.find.mockResolvedValue([]);
+        it('should handle empty results with pagination', async () => {
+            mockEntityManager.findAndCount.mockResolvedValue([[], 0]);
 
-            const result = await TransactionService.searchAllTransactions('NonExistent');
+            const result = await TransactionService.searchAllTransactions('NonExistent', 1, 10);
 
-            expect(result).toEqual([]);
+            expect(result).toEqual({ transactions: [], total: 0 });
         });
 
-        it('should perform case-insensitive search', async () => {
+        it('should perform case-insensitive search with pagination', async () => {
             const mockTransactions = [{ description: 'TEST TRANSACTION', currency: 'USD' }];
-            mockEntityManager.find.mockResolvedValue(mockTransactions);
+            const mockTotal = 1;
+            mockEntityManager.findAndCount.mockResolvedValue([mockTransactions, mockTotal]);
 
-            const result = await TransactionService.searchAllTransactions('test');
+            const result = await TransactionService.searchAllTransactions('test', 1, 10);
 
-            expect(result).toEqual(mockTransactions);
+            expect(result).toEqual({ transactions: mockTransactions, total: mockTotal });
         });
     });
 

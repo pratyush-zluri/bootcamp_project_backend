@@ -150,20 +150,23 @@ class TransactionService {
 
         return transactions;
     }
-    public async searchAllTransactions(query: string) {
+    public async searchAllTransactions(query: string, page: number, limit: number) {
         const em = await initORM();
         const regex = new RegExp(query, 'i'); // Case-insensitive search
-
-        const transactions = await em.find(Transaction, {
+        const offset: number = (page - 1) * limit;
+        const [transactions, total] = await em.findAndCount(Transaction, {
             $or: [
                 { description: regex },
                 { currency: regex },
-
             ],
             isDeleted: false
-        }, { orderBy: { date: 'DESC' } });
+        }, {
+            orderBy: { date: 'DESC' },
+            offset: offset,
+            limit: limit,
+        });
 
-        return transactions;
+        return { transactions, total };
     }
 
     public async batchHardDeleteTransactions(ids: number[]) {

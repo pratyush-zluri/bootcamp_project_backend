@@ -207,8 +207,15 @@ export const batchSoftDeleteTransactions = async (req: Request, res: Response): 
 export const searchAllTransactions = async (req: Request, res: Response): Promise<void> => {
     try {
         const query = req.query.query as string;
-        const transactions = await TransactionService.searchAllTransactions(query);
-        res.status(200).json(transactions);
+        const page = parseInt(req.query.page as string, 10) || 1;
+        const limit = parseInt(req.query.limit as string, 10) || 10;
+        const { transactions, total } = await TransactionService.searchAllTransactions(query, page, limit);
+        res.status(200).json({
+            transactions,
+            page,
+            limit,
+            total,
+        });
     } catch (err: any) {
         logger.error("Error searching transactions:", err);
         res.status(500).json({ message: 'An error occurred while searching transactions' });

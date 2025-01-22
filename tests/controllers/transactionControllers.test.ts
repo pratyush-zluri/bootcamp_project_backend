@@ -437,15 +437,40 @@ describe('Transaction Controller', () => {
   });
 
   describe('searchAllTransactions', () => {
-    it('should successfully search transactions', async () => {
+    it('should successfully search transactions with default pagination', async () => {
       mockRequest = { query: { query: 'test' } };
       const mockTransactions = [{ id: 1, description: 'test transaction' }];
-      (TransactionService.searchAllTransactions as jest.Mock).mockResolvedValue(mockTransactions);
+      const mockTotal = 1;
+      (TransactionService.searchAllTransactions as jest.Mock).mockResolvedValue({ transactions: mockTransactions, total: mockTotal });
 
       await TransactionController.searchAllTransactions(mockRequest as Request, mockResponse as Response);
 
+      expect(TransactionService.searchAllTransactions).toHaveBeenCalledWith('test', 1, 10);
       expect(mockResponse.status).toHaveBeenCalledWith(200);
-      expect(mockResponse.json).toHaveBeenCalledWith(mockTransactions);
+      expect(mockResponse.json).toHaveBeenCalledWith({
+        transactions: mockTransactions,
+        total: mockTotal,
+        page: 1,
+        limit: 10,
+      });
+    });
+
+    it('should successfully search transactions with custom pagination', async () => {
+      mockRequest = { query: { query: 'test', page: '2', limit: '5' } };
+      const mockTransactions = [{ id: 1, description: 'test transaction' }];
+      const mockTotal = 6;
+      (TransactionService.searchAllTransactions as jest.Mock).mockResolvedValue({ transactions: mockTransactions, total: mockTotal });
+
+      await TransactionController.searchAllTransactions(mockRequest as Request, mockResponse as Response);
+
+      expect(TransactionService.searchAllTransactions).toHaveBeenCalledWith('test', 2, 5);
+      expect(mockResponse.status).toHaveBeenCalledWith(200);
+      expect(mockResponse.json).toHaveBeenCalledWith({
+        transactions: mockTransactions,
+        total: mockTotal,
+        page: 2,
+        limit: 5,
+      });
     });
 
     it('should handle search error', async () => {
@@ -460,6 +485,7 @@ describe('Transaction Controller', () => {
       expect(mockResponse.json).toHaveBeenCalledWith({ message: 'An error occurred while searching transactions' });
     });
   });
+
 
   describe('batchHardDeleteTransactions', () => {
     it('should successfully hard delete multiple transactions', async () => {
@@ -522,6 +548,119 @@ describe('Transaction Controller', () => {
       expect(logger.error).toHaveBeenCalledWith('Error batch restoring transactions:', error);
       expect(mockResponse.status).toHaveBeenCalledWith(500);
       expect(mockResponse.json).toHaveBeenCalledWith({ message: 'An error occurred while batch restoring transactions' });
+    });
+  });
+  describe('getSoftDeletedTransactions', () => {
+    it('should get soft-deleted transactions with default pagination', async () => {
+      mockRequest = { query: {} };
+      const mockTransactions = [{ id: 1, description: 'Transaction 1' }];
+      const mockTotal = 1;
+      (TransactionService.getSoftDeletedTransactions as jest.Mock).mockResolvedValue({
+        transactions: mockTransactions,
+        total: mockTotal
+      });
+
+      await TransactionController.getSoftDeletedTransactions(mockRequest as Request, mockResponse as Response);
+
+      expect(TransactionService.getSoftDeletedTransactions).toHaveBeenCalledWith(1, 10);
+      expect(mockResponse.status).toHaveBeenCalledWith(200);
+      expect(mockResponse.json).toHaveBeenCalledWith({
+        transactions: mockTransactions,
+        total: mockTotal,
+        page: 1,
+        limit: 10,
+        totalPages: 1,
+      });
+    });
+
+    it('should get soft-deleted transactions with custom pagination', async () => {
+      mockRequest = { query: { page: '2', limit: '5' } };
+      const mockTransactions = [{ id: 2, description: 'Transaction 2' }];
+      const mockTotal = 6;
+      (TransactionService.getSoftDeletedTransactions as jest.Mock).mockResolvedValue({
+        transactions: mockTransactions,
+        total: mockTotal
+      });
+
+      await TransactionController.getSoftDeletedTransactions(mockRequest as Request, mockResponse as Response);
+
+      expect(TransactionService.getSoftDeletedTransactions).toHaveBeenCalledWith(2, 5);
+      expect(mockResponse.status).toHaveBeenCalledWith(200);
+      expect(mockResponse.json).toHaveBeenCalledWith({
+        transactions: mockTransactions,
+        total: mockTotal,
+        page: 2,
+        limit: 5,
+        totalPages: 2,
+      });
+    });
+
+    it('should handle service error', async () => {
+      mockRequest = { query: {} };
+      const error = new Error('Service error');
+      (TransactionService.getSoftDeletedTransactions as jest.Mock).mockRejectedValue(error);
+
+      await TransactionController.getSoftDeletedTransactions(mockRequest as Request, mockResponse as Response);
+
+      expect(logger.error).toHaveBeenCalledWith("Error fetching soft-deleted transactions:", error);
+      expect(mockResponse.status).toHaveBeenCalledWith(500);
+      expect(mockResponse.json).toHaveBeenCalledWith({ message: 'An error occurred while fetching soft-deleted transactions' });
+    });
+  }); describe('getSoftDeletedTransactions', () => {
+    it('should get soft-deleted transactions with default pagination', async () => {
+      mockRequest = { query: {} };
+      const mockTransactions = [{ id: 1, description: 'Transaction 1' }];
+      const mockTotal = 1;
+      (TransactionService.getSoftDeletedTransactions as jest.Mock).mockResolvedValue({
+        transactions: mockTransactions,
+        total: mockTotal
+      });
+
+      await TransactionController.getSoftDeletedTransactions(mockRequest as Request, mockResponse as Response);
+
+      expect(TransactionService.getSoftDeletedTransactions).toHaveBeenCalledWith(1, 10);
+      expect(mockResponse.status).toHaveBeenCalledWith(200);
+      expect(mockResponse.json).toHaveBeenCalledWith({
+        transactions: mockTransactions,
+        total: mockTotal,
+        page: 1,
+        limit: 10,
+        totalPages: 1,
+      });
+    });
+
+    it('should get soft-deleted transactions with custom pagination', async () => {
+      mockRequest = { query: { page: '2', limit: '5' } };
+      const mockTransactions = [{ id: 2, description: 'Transaction 2' }];
+      const mockTotal = 6;
+      (TransactionService.getSoftDeletedTransactions as jest.Mock).mockResolvedValue({
+        transactions: mockTransactions,
+        total: mockTotal
+      });
+
+      await TransactionController.getSoftDeletedTransactions(mockRequest as Request, mockResponse as Response);
+
+      expect(TransactionService.getSoftDeletedTransactions).toHaveBeenCalledWith(2, 5);
+      expect(mockResponse.status).toHaveBeenCalledWith(200);
+      expect(mockResponse.json).toHaveBeenCalledWith({
+        transactions: mockTransactions,
+        total: mockTotal,
+        page: 2,
+        limit: 5,
+        totalPages: 2,
+      });
+    });
+
+    it('should handle service error', async () => {
+      mockRequest = { query: {} };
+      const error = new Error('Service error');
+      (TransactionService.getSoftDeletedTransactions as jest.Mock).mockRejectedValue(error);
+
+      await TransactionController.getSoftDeletedTransactions(mockRequest as Request, mockResponse as Response);
+
+      expect(logger.error).toHaveBeenCalledWith("Error fetching soft-deleted transactions:", error);
+      expect(mockResponse.status).toHaveBeenCalledWith(500);
+      expect(mockResponse.json).toHaveBeenCalledWith({ message: 'An error occurred while fetching soft-deleted transactions' });
     });
   });
 });
