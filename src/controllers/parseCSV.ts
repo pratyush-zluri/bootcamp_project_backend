@@ -96,6 +96,7 @@ export const parseCsv = async (req: Request, res: Response): Promise<void> => {
         // Respond with success
         res.status(201).json({
             message: `${transactions.length} Transactions uploaded successfully`,
+            transactions,
             duplicateRows,
             repeatsInDB,
             errors,
