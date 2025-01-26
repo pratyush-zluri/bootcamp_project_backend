@@ -1,21 +1,13 @@
 import { EntityManager } from '@mikro-orm/core';
 import { Transaction } from '../entities/transactions';
 import initORM from '../utils/init_ORM';
-import { currencyConversionRates, conversionMap } from "../globals/currencyConversionRates";
+import { currencyConversionRates } from "../globals/currencyConversionRates";
 import { isValid } from 'date-fns';
 
 class TransactionService {
 
     public getConversionRate(currency: string, date: string): number {
         console.log('Checking conversion rate for:', { date, currency });
-
-        if (conversionMap[date] && conversionMap[date][currency]) {
-            const rate = conversionMap[date][currency];
-            if (rate > 0) {
-                return rate;
-            }
-        }
-
         const fallbackRate = currencyConversionRates.get(currency);
         if (fallbackRate === undefined) {
             throw new Error(`Conversion rate for currency ${currency} not found for date ${date}`);

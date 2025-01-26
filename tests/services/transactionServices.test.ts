@@ -2,7 +2,6 @@ import TransactionService from '../../src/services/transactionServices';
 import { EntityManager } from '@mikro-orm/core';
 import { Transaction } from '../../src/entities/transactions';
 import initORM from '../../src/utils/init_ORM';
-import { conversionMap, currencyConversionRates } from "../../src/globals/currencyConversionRates";
 
 // Mock dependencies
 jest.mock('../../src/utils/init_ORM');
