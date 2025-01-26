@@ -3,7 +3,6 @@ import TransactionService from '../services/transactionServices';
 import { parseAsync } from 'json2csv';
 import logger from '../utils/logger';
 
-// Add Transaction
 export const addTransaction = async (req: Request, res: Response): Promise<void> => {
     try {
         let { description, originalAmount, currency, date } = req.body;
@@ -26,7 +25,6 @@ export const addTransaction = async (req: Request, res: Response): Promise<void>
 
 };
 
-// Get Transactions
 export const getTransactions = async (req: Request, res: Response): Promise<void> => {
     try {
         const page: number = parseInt(req.query.page as string, 10) || 1;
@@ -52,7 +50,6 @@ export const getTransactions = async (req: Request, res: Response): Promise<void
     }
 };
 
-// Get Soft Deleted Transactions
 export const getSoftDeletedTransactions = async (req: Request, res: Response) => {
     try {
         const page = parseInt(req.query.page as string, 10) || 1;
@@ -71,7 +68,6 @@ export const getSoftDeletedTransactions = async (req: Request, res: Response) =>
     }
 };
 
-// Update Transaction
 export const updateTransaction = async (req: Request, res: Response): Promise<void> => {
     try {
         const id = parseInt(req.params.id);
@@ -99,7 +95,6 @@ export const updateTransaction = async (req: Request, res: Response): Promise<vo
     }
 };
 
-// Delete Transaction
 export const deleteTransaction = async (req: Request, res: Response): Promise<void> => {
     try {
         const id = parseInt(req.params.id);
@@ -121,7 +116,6 @@ export const deleteTransaction = async (req: Request, res: Response): Promise<vo
     }
 };
 
-// Soft Delete Transaction
 export const softDeleteTransaction = async (req: Request, res: Response): Promise<void> => {
     try {
         const id = parseInt(req.params.id);
@@ -145,7 +139,6 @@ export const softDeleteTransaction = async (req: Request, res: Response): Promis
     }
 };
 
-// Restore Transaction
 export const restoreTransaction = async (req: Request, res: Response): Promise<void> => {
     try {
         const id = parseInt(req.params.id);
@@ -167,7 +160,6 @@ export const restoreTransaction = async (req: Request, res: Response): Promise<v
     }
 };
 
-// Download Transactions as CSV
 export const downloadTransactionsCSV = async (req: Request, res: Response): Promise<void> => {
     try {
         const transactions = await TransactionService.getTransactionsCSV();
@@ -176,7 +168,7 @@ export const downloadTransactionsCSV = async (req: Request, res: Response): Prom
             res.status(404).json({ message: 'No transactions available to download' });
             return;
         }
-        const csv = await parseAsync(transactions, { fields: ['id', 'date', 'description', 'originalAmount', 'currency', 'amount_in_inr'] });
+        const csv = await parseAsync(transactions, { fields: ['id', 'Date', 'Description', 'Amount', 'Currency', 'amount_in_inr'] });
         res.header('Content-Type', 'text/csv');
         res.attachment('transactions.csv');
         res.send(csv);
@@ -186,25 +178,23 @@ export const downloadTransactionsCSV = async (req: Request, res: Response): Prom
     }
 };
 
-// Batch Soft Delete Transactions
+
 export const batchSoftDeleteTransactions = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { ids }: { ids: string[] } = req.body; // Explicitly type 'ids' as an array of strings
+        const { ids }: { ids: string[] } = req.body;
         if (ids.length == 0) {
             res.status(400).json({ message: "Please provide at least one ID." });
             return;
         }
 
-        // Parse the IDs to integers
-        const parsedIds = ids.map((id: string) => parseInt(id, 10)); // Explicitly type 'id' as a string
+        const parsedIds = ids.map((id: string) => parseInt(id, 10));
 
-        // Validate that all IDs are numbers
         if (!Array.isArray(parsedIds) || parsedIds.some(isNaN)) {
             res.status(400).json({ message: "Invalid IDs format. Please provide an array of numbers." });
             return;
         }
 
-        // Proceed with the batch soft delete
+
         const transactions = await TransactionService.batchSoftDeleteTransactions(parsedIds);
         res.json({ message: "Transactions soft deleted", transactions });
     } catch (err: any) {
@@ -252,7 +242,7 @@ export const batchHardDeleteTransactions = async (req: Request, res: Response): 
             if (err.message === "No transactions found to delete") {
                 res.status(404).json({ message: err.message });
             } else {
-                throw err; // Re-throw other errors to be caught by outer catch block
+                throw err;
             }
         }
     } catch (err: any) {

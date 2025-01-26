@@ -173,7 +173,6 @@ export const validateUpdate = async (req: Request, res: Response, next: NextFunc
       return;
     }
 
-    // Date range check
     const minValidDate = new Date('1990-01-01');
     const maxValidDate = new Date(); // Current date
     if (checkDate < minValidDate) {

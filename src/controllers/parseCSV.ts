@@ -45,7 +45,6 @@ export const parseCsv = async (req: Request, res: Response): Promise<void> => {
         for (const row of validData) {
             const parsedDate = formatDate(row.Date);
 
-            // Validate Amount
             if (row.Amount < 0) {
                 const errorMsg = `Negative amount in row: ${JSON.stringify(row)} - ${row.Amount}`;
                 logger.error(errorMsg);
@@ -53,7 +52,6 @@ export const parseCsv = async (req: Request, res: Response): Promise<void> => {
                 continue;
             }
 
-            // Check for duplicates in the database
             const key = `${parsedDate.toISOString().split('T')[0]}|${row.Description}`;
             if (existingSet.has(key)) {
                 repeatsInDB.push(row);
@@ -62,7 +60,6 @@ export const parseCsv = async (req: Request, res: Response): Promise<void> => {
 
             seenEntries.add(key);
 
-            // Get conversion rate and create transaction
             let conversionRate;
             try {
                 conversionRate = transactionServices.getConversionRate(row.Currency, row.Date.split('T')[0]);
@@ -83,17 +80,14 @@ export const parseCsv = async (req: Request, res: Response): Promise<void> => {
             transactions.push(transaction);
         }
 
-        // Save transactions to the database
         if (transactions.length > 0) {
             await em.persistAndFlush(transactions);
         }
 
-        // Generate CSV of uploaded transactions
         const csv = await parseAsync(transactions, {
             fields: ["id", "date", "description", "originalAmount", "currency", "amount_in_inr"],
         });
 
-        // Respond with success
         res.status(201).json({
             message: transactions.length === 0
                 ? "No transactions were uploaded."
@@ -104,7 +98,6 @@ export const parseCsv = async (req: Request, res: Response): Promise<void> => {
             errors,
         });
 
-        // Clean up uploaded file
         if (req.file?.path) {
             await fs.unlink(req.file.path);
         }

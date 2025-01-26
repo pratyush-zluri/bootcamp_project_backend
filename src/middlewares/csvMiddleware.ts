@@ -48,7 +48,6 @@ const validateCSVData = async (req: Request, res: Response, next: NextFunction):
     try {
         const fileContent = await fs.readFile(file.path, "utf-8");
 
-        // Check if the CSV file is empty
         if (fileContent.trim().length === 0) {
             await fs.unlink(file.path);
             res.status(400).json({ message: "The uploaded CSV file is empty." });
@@ -70,14 +69,12 @@ const validateCSVData = async (req: Request, res: Response, next: NextFunction):
         for (const row of result.data) {
             let date = row.Date;
 
-            // Convert date from dd-MM-yyyy to yyyy-MM-dd if needed
             const ddMMyyyyRegex = /^\d{2}-\d{2}-\d{4}$/;
             if (ddMMyyyyRegex.test(date)) {
                 const [day, month, year] = date.split('-');
                 date = `${year}-${month}-${day}`;
             }
 
-            // Validate date format and value
             const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
             if (!dateRegex.test(date)) {
                 const errorMsg = `Invalid date format in row: ${JSON.stringify(row)} - Expected format: YYYY-MM-DD`;
@@ -94,7 +91,6 @@ const validateCSVData = async (req: Request, res: Response, next: NextFunction):
                 continue;
             }
 
-            // Validate schema
             const { error } = schema.validate(row);
             if (error) {
                 logger.error(`Validation error: ${error.details[0].message}`);
@@ -102,7 +98,6 @@ const validateCSVData = async (req: Request, res: Response, next: NextFunction):
                 continue;
             }
 
-            // Check for duplicates in the CSV file
             const key = `${date}|${row.Description}`;
             if (seenEntries.has(key)) {
                 duplicateRows.push(row);
