@@ -1,16 +1,3 @@
-// __mocks__/entities.ts
-jest.mock('../../src/entities/transactions', () => ({
-  Transaction: class MockTransaction {
-    id!: number;
-    date!: Date;
-    description!: string;
-    originalAmount!: number;
-    currency!: string;
-    isDeleted!: boolean;
-  }
-}));
-
-// transactionMiddlewares.test.ts
 import { Request, Response, NextFunction } from 'express';
 import {
   idValidator,
@@ -20,6 +7,7 @@ import {
   checkSoftDeleted
 } from '../../src/middlewares/transactionMiddlewares';
 import { Transaction } from '../../src/entities/transactions';
+import logger from '../../src/utils/logger';
 
 // Mock logger
 jest.mock('../../src/utils/logger', () => ({
@@ -31,7 +19,7 @@ jest.mock('../../src/utils/logger', () => ({
 jest.mock('../../src/utils/init_ORM', () => {
   return jest.fn().mockImplementation(() => ({
     findOne: jest.fn(),
-    flush: jest.fn(),
+    find: jest.fn(),
     persistAndFlush: jest.fn()
   }));
 });
@@ -65,12 +53,14 @@ describe('Transaction Middlewares', () => {
       mockRequest.params = { id: 'abc' };
       idValidator(mockRequest as Request, mockResponse as Response, nextFunction);
       expect(mockResponse.status).toHaveBeenCalledWith(400);
+      expect(mockResponse.json).toHaveBeenCalledWith({ message: "Enter a valid ID" });
     });
 
     it('should reject missing id', () => {
       mockRequest.params = {};
       idValidator(mockRequest as Request, mockResponse as Response, nextFunction);
       expect(mockResponse.status).toHaveBeenCalledWith(400);
+      expect(mockResponse.json).toHaveBeenCalledWith({ message: "Enter a valid ID" });
     });
   });
 
@@ -85,18 +75,21 @@ describe('Transaction Middlewares', () => {
       mockRequest.query = { page: 'abc', limit: 'def' };
       pageLimitValidator(mockRequest as Request, mockResponse as Response, nextFunction);
       expect(mockResponse.status).toHaveBeenCalledWith(400);
+      expect(mockResponse.json).toHaveBeenCalledWith({ message: "Page and Limit must be numbers" });
     });
 
     it('should reject negative values', () => {
       mockRequest.query = { page: '-1', limit: '0' };
       pageLimitValidator(mockRequest as Request, mockResponse as Response, nextFunction);
       expect(mockResponse.status).toHaveBeenCalledWith(400);
+      expect(mockResponse.json).toHaveBeenCalledWith({ message: "Enter valid page and limit" });
     });
 
     it('should reject limit exceeding maximum', () => {
       mockRequest.query = { page: '1', limit: '501' };
       pageLimitValidator(mockRequest as Request, mockResponse as Response, nextFunction);
       expect(mockResponse.status).toHaveBeenCalledWith(400);
+      expect(mockResponse.json).toHaveBeenCalledWith({ message: "Limit cannot be greater than 500" });
     });
   });
 
@@ -127,6 +120,7 @@ describe('Transaction Middlewares', () => {
 
       await newEntryValidator(mockRequest as Request, mockResponse as Response, nextFunction);
       expect(mockResponse.status).toHaveBeenCalledWith(400);
+      expect(mockResponse.json).toHaveBeenCalledWith({ message: '"originalAmount" is required' });
     });
 
     it('should reject invalid date format', async () => {
@@ -139,6 +133,26 @@ describe('Transaction Middlewares', () => {
 
       await newEntryValidator(mockRequest as Request, mockResponse as Response, nextFunction);
       expect(mockResponse.status).toHaveBeenCalledWith(400);
+      expect(mockResponse.json).toHaveBeenCalledWith({
+        success: false,
+        message: "Invalid date format. Expected format: YYYY-MM-DD",
+      });
+    });
+
+    it('should reject invalid date value', async () => {
+      mockRequest.body = {
+        description: 'Test',
+        originalAmount: 100,
+        currency: 'USD',
+        date: '2024-02-30'
+      };
+
+      await newEntryValidator(mockRequest as Request, mockResponse as Response, nextFunction);
+      expect(mockResponse.status).toHaveBeenCalledWith(400);
+      expect(mockResponse.json).toHaveBeenCalledWith({
+        success: false,
+        message: "Invalid date value",
+      });
     });
 
     it('should handle duplicate transaction', async () => {
@@ -156,6 +170,9 @@ describe('Transaction Middlewares', () => {
 
       await newEntryValidator(mockRequest as Request, mockResponse as Response, nextFunction);
       expect(mockResponse.status).toHaveBeenCalledWith(400);
+      expect(mockResponse.json).toHaveBeenCalledWith({
+        message: "A transaction with the same date and description already exists",
+      });
     });
   });
 
@@ -188,6 +205,33 @@ describe('Transaction Middlewares', () => {
 
       await validateUpdate(mockRequest as Request, mockResponse as Response, nextFunction);
       expect(mockResponse.status).toHaveBeenCalledWith(400);
+
+    });
+
+    it('should reject invalid date format', async () => {
+      mockRequest.body = {
+        date: '01-01-2024'
+      };
+
+      await validateUpdate(mockRequest as Request, mockResponse as Response, nextFunction);
+      expect(mockResponse.status).toHaveBeenCalledWith(400);
+      expect(mockResponse.json).toHaveBeenCalledWith({
+        success: false,
+        message: "Invalid date format. Expected format: YYYY-MM-DD"
+      });
+    });
+
+    it('should reject invalid date value', async () => {
+      mockRequest.body = {
+        date: '2024-02-30'
+      };
+
+      await validateUpdate(mockRequest as Request, mockResponse as Response, nextFunction);
+      expect(mockResponse.status).toHaveBeenCalledWith(400);
+      expect(mockResponse.json).toHaveBeenCalledWith({
+        success: false,
+        message: "Invalid date value",
+      });
     });
 
     it('should reject negative amount', async () => {
@@ -197,6 +241,30 @@ describe('Transaction Middlewares', () => {
 
       await validateUpdate(mockRequest as Request, mockResponse as Response, nextFunction);
       expect(mockResponse.status).toHaveBeenCalledWith(400);
+      expect(mockResponse.json).toHaveBeenCalledWith({
+        success: false,
+        message: 'Amount cannot be negative'
+      });
+    });
+
+    it('should handle duplicate transaction', async () => {
+      mockRequest.body = {
+        date: '2024-01-01',
+        description: 'Test'
+      };
+      mockRequest.params = { id: '1' };
+
+      const mockEM = {
+        findOne: jest.fn().mockResolvedValue({ id: 2 })
+      };
+      (require('../../src/utils/init_ORM') as jest.Mock).mockResolvedValue(mockEM);
+
+      await validateUpdate(mockRequest as Request, mockResponse as Response, nextFunction);
+      expect(mockResponse.status).toHaveBeenCalledWith(400);
+      expect(mockResponse.json).toHaveBeenCalledWith({
+        success: false,
+        message: 'Transaction with same date and description already exists'
+      });
     });
   });
 
@@ -221,12 +289,27 @@ describe('Transaction Middlewares', () => {
 
       await checkSoftDeleted(mockRequest as Request, mockResponse as Response, nextFunction);
       expect(mockResponse.status).toHaveBeenCalledWith(400);
+      expect(mockResponse.json).toHaveBeenCalledWith({
+        message: "Cannot perform action on a soft-deleted transaction"
+      });
     });
 
     it('should handle database errors', async () => {
       mockRequest.params = { id: '1' };
       const mockEM = {
         findOne: jest.fn().mockRejectedValue(new Error('Database error'))
+      };
+      (require('../../src/utils/init_ORM') as jest.Mock).mockResolvedValue(mockEM);
+
+      await checkSoftDeleted(mockRequest as Request, mockResponse as Response, nextFunction);
+      expect(logger.error).toHaveBeenCalledWith("Error checking soft-deleted transaction:", expect.any(Error));
+      expect(nextFunction).toHaveBeenCalledWith(expect.any(Error));
+    });
+
+    it('should handle missing transaction', async () => {
+      mockRequest.params = { id: '1' };
+      const mockEM = {
+        findOne: jest.fn().mockResolvedValue(null)
       };
       (require('../../src/utils/init_ORM') as jest.Mock).mockResolvedValue(mockEM);
 

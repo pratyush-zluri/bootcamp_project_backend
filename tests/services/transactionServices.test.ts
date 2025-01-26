@@ -2,14 +2,25 @@ import TransactionService from '../../src/services/transactionServices';
 import { EntityManager } from '@mikro-orm/core';
 import { Transaction } from '../../src/entities/transactions';
 import initORM from '../../src/utils/init_ORM';
-import currencyConversionRates from "../../src/globals/currencyConversionRates";
-import { any } from 'joi';
+import { conversionMap, currencyConversionRates } from "../../src/globals/currencyConversionRates";
 
 // Mock dependencies
 jest.mock('../../src/utils/init_ORM');
 jest.mock('../../src/globals/currencyConversionRates', () => ({
-    USD: 75,
-    EUR: 85
+    currencyConversionRates: new Map([
+        ['USD', 75],
+        ['EUR', 85]
+    ]),
+    conversionMap: {
+        '2021-01-21': {
+            'USD': 75,
+            'EUR': 85
+        },
+        '2025-01-21': {
+            'USD': 75,
+            'EUR': 85
+        }
+    }
 }));
 
 describe('TransactionService', () => {
@@ -34,16 +45,16 @@ describe('TransactionService', () => {
 
     describe('getConversionRate', () => {
         it('should return correct conversion rate for USD', () => {
-            expect(TransactionService.getConversionRate('USD')).toBe(75);
+            expect(TransactionService.getConversionRate('USD', '2021-01-21')).toBe(75);
         });
 
         it('should return correct conversion rate for EUR', () => {
-            expect(TransactionService.getConversionRate('EUR')).toBe(85);
+            expect(TransactionService.getConversionRate('EUR', '2021-01-21')).toBe(85);
         });
 
         it('should throw error for invalid currency', () => {
-            expect(() => TransactionService.getConversionRate('INVALID')).toThrow(
-                'Conversion rate for currency INVALID not found'
+            expect(() => TransactionService.getConversionRate('INVALID', '2021-01-21')).toThrow(
+                'Conversion rate for currency INVALID not found for date 2021-01-21'
             );
         });
     });
@@ -78,7 +89,7 @@ describe('TransactionService', () => {
         it('should throw error for invalid currency', async () => {
             const invalidData = { ...validTransactionData, currency: 'INVALID' };
             await expect(TransactionService.addTransaction(invalidData)).rejects.toThrow(
-                'Conversion rate for currency INVALID not found'
+                'Conversion rate for currency INVALID not found for date 2025-01-21'
             );
         });
     });
@@ -223,7 +234,7 @@ describe('TransactionService', () => {
 
         it('should throw error for invalid currency', async () => {
             await expect(TransactionService.updateTransaction(1, { currency: 'INVALID' }))
-                .rejects.toThrow('Conversion rate for currency INVALID not found');
+                .rejects.toThrow('Conversion rate for currency INVALID not found for date 2025-01-21');
         });
     });
 

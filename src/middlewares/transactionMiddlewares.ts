@@ -8,16 +8,16 @@ import initORM from '../utils/init_ORM';
 
 const new_schema = Joi.object({
   description: Joi.string().required(),
-  originalAmount: Joi.number().required(),
+  originalAmount: Joi.number().required().greater(0),
   currency: Joi.string().required(),
   date: Joi.string().required(),
 });
 
 const update_schema = Joi.object({
-  description: Joi.string(),
-  originalAmount: Joi.number(),
-  currency: Joi.string(),
-  date: Joi.string(),
+  description: Joi.string().optional(),
+  originalAmount: Joi.number().optional().greater(0),
+  currency: Joi.string().optional(),
+  date: Joi.string().optional(),
 });
 
 export const idValidator = (req: Request, res: Response, next: NextFunction): void => {
@@ -68,10 +68,12 @@ export const pageLimitValidator = (req: Request, res: Response, next: NextFuncti
 };
 
 export const newEntryValidator = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-  const { error } = new_schema.validate(req.body);
+  const { error } = new_schema.validate(req.body, { abortEarly: false });
+
   if (error) {
+    const errorMessages = error.details.map(detail => detail.message);
     res.status(400).json({
-      message: error.details[0].message
+      message: errorMessages
     });
     return;
   }
@@ -95,6 +97,24 @@ export const newEntryValidator = async (req: Request, res: Response, next: NextF
         success: false,
         message: "Invalid date value",
       });
+      return;
+    }
+
+    // Date range check
+    const minValidDate = new Date('1990-01-01');
+    const maxValidDate = new Date(); // Current date
+    if (transactionDate < minValidDate) {
+      res.status(400).json({
+        success: false,
+        message: "Transaction date cannot be before 1990-01-01",
+      });
+      return;
+    }
+    if (transactionDate > maxValidDate) {
+      res.status(400).json({
+        success: false,
+        message: "Transaction date cannot be in future",
+      })
       return;
     }
 
@@ -152,39 +172,28 @@ export const validateUpdate = async (req: Request, res: Response, next: NextFunc
       });
       return;
     }
-  }
 
-  if (originalAmount && originalAmount < 0) {
-    res.status(400).json({
-      success: false,
-      message: 'Amount cannot be negative'
-    });
-    return;
-  }
-
-  if (date && description) {
-    try {
-      const em = await initORM();
-      const duplicate = await em.findOne(Transaction, { date: new Date(date), description });
-      if (duplicate && (duplicate.id !== Number(req.params.id))) {
-        res.status(400).json({
-          success: false,
-          message: 'Transaction with same date and description already exists'
-        });
-        return;
-      }
-    } catch (err) {
-      logger.error("Error in validateUpdate:", err);
-      res.status(500).json({
+    // Date range check
+    const minValidDate = new Date('1990-01-01');
+    const maxValidDate = new Date(); // Current date
+    if (checkDate < minValidDate) {
+      res.status(400).json({
         success: false,
-        message: 'Error checking for duplicate transaction',
+        message: "Transaction date cannot be before 1990-01-01",
       });
+      return;
+    }
+    if (checkDate > maxValidDate) {
+      res.status(400).json({
+        success: false,
+        message: "Transaction date cannot be in future",
+      })
       return;
     }
   }
 
   next();
-};
+}
 
 export const checkSoftDeleted = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {

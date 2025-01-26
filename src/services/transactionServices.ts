@@ -1,17 +1,27 @@
 import { EntityManager } from '@mikro-orm/core';
 import { Transaction } from '../entities/transactions';
 import initORM from '../utils/init_ORM';
-import currencyConversionRates from "../globals/currencyConversionRates";
+import { currencyConversionRates, conversionMap } from "../globals/currencyConversionRates";
 import { isValid } from 'date-fns';
 
 class TransactionService {
 
-    public getConversionRate(currency: string): number {
-        const rate = currencyConversionRates[currency];
-        if (rate === undefined) {
-            throw new Error(`Conversion rate for currency ${currency} not found`);
+    public getConversionRate(currency: string, date: string): number {
+        console.log('Checking conversion rate for:', { date, currency });
+
+        if (conversionMap[date] && conversionMap[date][currency]) {
+            const rate = conversionMap[date][currency];
+            if (rate > 0) {
+                return rate;
+            }
         }
-        return rate;
+
+        const fallbackRate = currencyConversionRates.get(currency);
+        if (fallbackRate === undefined) {
+            throw new Error(`Conversion rate for currency ${currency} not found for date ${date}`);
+        }
+
+        return fallbackRate;
     }
 
     public async addTransaction(data: { description: string; originalAmount: number; currency: string; date: string }) {
@@ -28,7 +38,7 @@ class TransactionService {
         transaction.currency = data.currency;
         transaction.originalAmount = data.originalAmount;
 
-        const exchangeRate = this.getConversionRate(data.currency);
+        const exchangeRate = this.getConversionRate(data.currency, transactionDate.toISOString().split('T')[0]);
         transaction.amount_in_inr = data.originalAmount * exchangeRate;
 
         await em.persistAndFlush(transaction);
@@ -91,7 +101,7 @@ class TransactionService {
             transaction.currency = data.currency;
         }
 
-        const exchangeRate = this.getConversionRate(transaction.currency);
+        const exchangeRate = this.getConversionRate(transaction.currency, transaction.date.toISOString().split('T')[0]);
         transaction.amount_in_inr = transaction.originalAmount * exchangeRate;
 
         await em.flush();
@@ -192,6 +202,16 @@ class TransactionService {
         await em.flush();
 
         return transactions;
+    }
+
+    public async findTransaction(date: string, description: string): Promise<Transaction | null> {
+        const em = await initORM();
+        const transaction = await em.findOne(Transaction, {
+            date: new Date(date),
+            description: description,
+            isDeleted: false
+        });
+        return transaction;
     }
 }
 

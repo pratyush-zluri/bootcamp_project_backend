@@ -6,13 +6,13 @@ import logger from '../utils/logger';
 // Add Transaction
 export const addTransaction = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { description, originalAmount, currency, date } = req.body;
+        let { description, originalAmount, currency, date } = req.body;
 
         if (!description || !originalAmount || !currency || !date) {
             res.status(400).json({ message: 'Missing required fields' });
             return;
         }
-
+        currency = currency.toUpperCase();
         const transaction = await TransactionService.addTransaction({ description, originalAmount, currency, date });
         res.status(201).json(transaction);
     } catch (err: any) {
@@ -75,7 +75,12 @@ export const getSoftDeletedTransactions = async (req: Request, res: Response) =>
 export const updateTransaction = async (req: Request, res: Response): Promise<void> => {
     try {
         const id = parseInt(req.params.id);
-        const { description, originalAmount, currency, date } = req.body;
+        let { description, originalAmount, currency, date } = req.body;
+        if (!description && !originalAmount && !currency && !date) {
+            res.status(200).json({ message: 'No changes made as no field updated' });
+            return;
+        }
+        currency = currency.toUpperCase();
         const transaction = await TransactionService.updateTransaction(id, { description, originalAmount, currency, date });
         res.status(200).json({ message: "Transaction updated successfully", transaction });
     } catch (err: any) {
@@ -185,6 +190,10 @@ export const downloadTransactionsCSV = async (req: Request, res: Response): Prom
 export const batchSoftDeleteTransactions = async (req: Request, res: Response): Promise<void> => {
     try {
         const { ids }: { ids: string[] } = req.body; // Explicitly type 'ids' as an array of strings
+        if (ids.length == 0) {
+            res.status(400).json({ message: "Please provide at least one ID." });
+            return;
+        }
 
         // Parse the IDs to integers
         const parsedIds = ids.map((id: string) => parseInt(id, 10)); // Explicitly type 'id' as a string
@@ -224,20 +233,28 @@ export const searchAllTransactions = async (req: Request, res: Response): Promis
 
 export const batchHardDeleteTransactions = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { ids }: { ids: string[] } = req.body; // Explicitly type 'ids' as an array of strings
+        const { ids }: { ids: string[] } = req.body;
+        if (ids.length == 0) {
+            res.status(400).json({ message: "Please provide atleast one ID" })
+            return;
+        }
+        const parsedIds = ids.map((id: string) => parseInt(id, 10));
 
-        // Parse the IDs to integers
-        const parsedIds = ids.map((id: string) => parseInt(id, 10)); // Explicitly type 'id' as a string
-
-        // Validate that all IDs are numbers
         if (!Array.isArray(parsedIds) || parsedIds.some(isNaN)) {
             res.status(400).json({ message: "Invalid IDs format. Please provide an array of numbers." });
             return;
         }
 
-        // Proceed with the batch hard delete
-        await TransactionService.batchHardDeleteTransactions(parsedIds);
-        res.json({ message: "Transactions permanently deleted" });
+        try {
+            await TransactionService.batchHardDeleteTransactions(parsedIds);
+            res.json({ message: "Transactions permanently deleted" });
+        } catch (err: any) {
+            if (err.message === "No transactions found to delete") {
+                res.status(404).json({ message: err.message });
+            } else {
+                throw err; // Re-throw other errors to be caught by outer catch block
+            }
+        }
     } catch (err: any) {
         logger.error("Error batch hard deleting transactions:", err);
         res.status(500).json({ message: 'An error occurred while batch deleting transactions' });
@@ -246,20 +263,28 @@ export const batchHardDeleteTransactions = async (req: Request, res: Response): 
 
 export const batchRestoreTransactions = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { ids }: { ids: string[] } = req.body; // Explicitly type 'ids' as an array of strings
+        const { ids }: { ids: string[] } = req.body;
+        if (ids.length == 0) {
+            res.status(400).json({ message: "Please provide atleast one ID" })
+            return;
+        }
+        const parsedIds = ids.map((id: string) => parseInt(id, 10));
 
-        // Parse the IDs to integers
-        const parsedIds = ids.map((id: string) => parseInt(id, 10)); // Explicitly type 'id' as a string
-
-        // Validate that all IDs are numbers
         if (!Array.isArray(parsedIds) || parsedIds.some(isNaN)) {
             res.status(400).json({ message: "Invalid IDs format. Please provide an array of numbers." });
             return;
         }
 
-        // Proceed with the batch restore
-        await TransactionService.batchRestoreTransactions(parsedIds);
-        res.json({ message: "Transactions restored" });
+        try {
+            await TransactionService.batchRestoreTransactions(parsedIds);
+            res.json({ message: "Transactions Restored Successfully" });
+        } catch (err: any) {
+            if (err.message === "No transactions found to restore") {
+                res.status(404).json({ message: err.message });
+            } else {
+                throw err;
+            }
+        }
     } catch (err: any) {
         logger.error("Error batch restoring transactions:", err);
         res.status(500).json({ message: 'An error occurred while batch restoring transactions' });

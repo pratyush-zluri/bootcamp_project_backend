@@ -4,7 +4,7 @@ import { Transaction } from "../entities/transactions";
 import initORM from "../utils/init_ORM";
 import { isValid, parse, format } from "date-fns";
 import logger from "../utils/logger";
-import currencyConversionRates from "../globals/currencyConversionRates";
+import transactionServices from "../services/transactionServices";
 import { parseAsync } from "json2csv";
 
 type Data = {
@@ -14,14 +14,6 @@ type Data = {
     Currency: string;
 };
 
-const getConversionRate = (currency: string): number => {
-    const rate = currencyConversionRates[currency];
-    if (!rate) {
-        throw new Error(`Conversion rate for currency ${currency} not found`);
-    }
-    return rate;
-};
-
 const formatDate = (dateString: string): Date => {
     return parse(dateString, 'dd-MM-yyyy', new Date());
 };
@@ -29,8 +21,8 @@ const formatDate = (dateString: string): Date => {
 export const parseCsv = async (req: Request, res: Response): Promise<void> => {
     try {
         const em = await initORM();
-        const { validData = [], errors = [] }: { validData: Data[]; errors: string[] } = req.body;
-        const repeats = [];
+        const { validData = [], errors = [], duplicateRows = [] }: { validData: Data[]; errors: string[]; duplicateRows: Data[] } = req.body;
+        const repeatsInDB: Data[] = [];
         const transactions: Transaction[] = [];
         const seenEntries = new Set<string>();
 
@@ -61,28 +53,10 @@ export const parseCsv = async (req: Request, res: Response): Promise<void> => {
                 continue;
             }
 
-            // Validate Currency
-            if (!currencyConversionRates[row.Currency]) {
-                const errorMsg = `Unsupported currency in row: ${JSON.stringify(row)} - ${row.Currency}`;
-                logger.error(errorMsg);
-                errors.push(errorMsg);
-                continue;
-            }
-
-            // Check for duplicates
+            // Check for duplicates in the database
             const key = `${parsedDate.toISOString().split('T')[0]}|${row.Description}`;
-            if (seenEntries.has(key)) {
-                const errorMsg = `Duplicate entry in CSV: ${JSON.stringify(row)}`;
-                logger.error(errorMsg);
-                repeats.push(row);
-                continue;
-            }
-
-            // Check for existing transaction in DB
             if (existingSet.has(key)) {
-                const errorMsg = `Transaction already exists in database: ${row.Description}`;
-                logger.error(errorMsg);
-                repeats.push(row);
+                repeatsInDB.push(row);
                 continue;
             }
 
@@ -91,7 +65,7 @@ export const parseCsv = async (req: Request, res: Response): Promise<void> => {
             // Get conversion rate and create transaction
             let conversionRate;
             try {
-                conversionRate = getConversionRate(row.Currency);
+                conversionRate = transactionServices.getConversionRate(row.Currency, row.Date.split('T')[0]);
             } catch (error) {
                 const errorMsg = `Error getting conversion rate for currency: ${row.Currency}`;
                 logger.error(errorMsg, error);
@@ -122,7 +96,8 @@ export const parseCsv = async (req: Request, res: Response): Promise<void> => {
         // Respond with success
         res.status(201).json({
             message: `${transactions.length} Transactions uploaded successfully`,
-            repeats,
+            duplicateRows,
+            repeatsInDB,
             errors,
         });
 

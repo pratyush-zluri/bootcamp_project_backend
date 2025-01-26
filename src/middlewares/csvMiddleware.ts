@@ -15,7 +15,7 @@ type Data = {
 const schema = Joi.object<Data>({
     Date: Joi.string().required(),
     Description: Joi.string().required(),
-    Amount: Joi.number().required(),
+    Amount: Joi.number().required().greater(0),
     Currency: Joi.string().required(),
 });
 
@@ -30,16 +30,31 @@ const validateCSVFile = (req: Request, res: Response, next: NextFunction) => {
 
 const validateCSVData = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const file = req.file;
+    if (!file) {
+        res.status(400).json({ message: "No file uploaded" });
+        return;
+    }
+
     if (file.mimetype !== "text/csv") {
         res.status(400).json({ message: "Invalid file type. Please upload a CSV file." });
         return;
     }
+
     if (file.size > 1048576) {
         res.status(400).json({ message: "File size exceeds the 1 MB limit." });
         return;
     }
+
     try {
         const fileContent = await fs.readFile(file.path, "utf-8");
+
+        // Check if the CSV file is empty
+        if (fileContent.trim().length === 0) {
+            await fs.unlink(file.path);
+            res.status(400).json({ message: "The uploaded CSV file is empty." });
+            return;
+        }
+
         const result: ParseResult<Data> = Papa.parse(fileContent, {
             header: true,
             skipEmptyLines: true,
@@ -49,6 +64,8 @@ const validateCSVData = async (req: Request, res: Response, next: NextFunction):
 
         const errors: string[] = [];
         const validData: Data[] = [];
+        const duplicateRows: Data[] = [];
+        const seenEntries = new Set<string>();
 
         for (const row of result.data) {
             let date = row.Date;
@@ -68,6 +85,7 @@ const validateCSVData = async (req: Request, res: Response, next: NextFunction):
                 errors.push(errorMsg);
                 continue;
             }
+
             const parsedDate = parse(date, 'yyyy-MM-dd', new Date());
             if (!isValid(parsedDate) || format(parsedDate, 'yyyy-MM-dd') !== date) {
                 const errorMsg = `Invalid date value in row: ${JSON.stringify(row)} - ${row.Date}`;
@@ -76,12 +94,21 @@ const validateCSVData = async (req: Request, res: Response, next: NextFunction):
                 continue;
             }
 
+            // Validate schema
             const { error } = schema.validate(row);
             if (error) {
                 logger.error(`Validation error: ${error.details[0].message}`);
                 errors.push(`Validation error in row: ${JSON.stringify(row)} - ${error.details[0].message}`);
                 continue;
             }
+
+            // Check for duplicates in the CSV file
+            const key = `${date}|${row.Description}`;
+            if (seenEntries.has(key)) {
+                duplicateRows.push(row);
+                continue;
+            }
+            seenEntries.add(key);
             validData.push(row);
         }
 
@@ -89,7 +116,8 @@ const validateCSVData = async (req: Request, res: Response, next: NextFunction):
             await fs.unlink(file.path);
             res.status(400).json({
                 error: "No valid transactions to upload",
-                errors
+                errors,
+                duplicateRows,
             });
             return;
         }
@@ -97,6 +125,7 @@ const validateCSVData = async (req: Request, res: Response, next: NextFunction):
         req.body = req.body || {};
         req.body.validData = validData;
         req.body.errors = errors;
+        req.body.duplicateRows = duplicateRows;
         next();
     } catch (err) {
         logger.error("Error processing CSV file:", err);
