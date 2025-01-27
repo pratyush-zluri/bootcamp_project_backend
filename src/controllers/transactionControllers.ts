@@ -38,8 +38,9 @@ export const getTransactions = async (req: Request, res: Response): Promise<void
         }
 
         const totalPages = Math.ceil(total / limit);
-        if (page > totalPages) {
+        if (page > 1 && page > totalPages) {
             res.status(400).json({ message: `Page cannot be greater than total pages (${totalPages})` });
+            return;
         }
 
         res.status(200).json({
@@ -61,7 +62,7 @@ export const getSoftDeletedTransactions = async (req: Request, res: Response) =>
         const limit = parseInt(req.query.limit as string, 10) || 10;
         const { transactions, total } = await TransactionService.getSoftDeletedTransactions(page, limit);
         const totalPages = Math.ceil(total / limit);
-        if (page > totalPages) {
+        if (page > 1 && page > totalPages) {
             res.status(400).json({ message: `Page cannot be greater than total pages (${totalPages})` });
             return;
         }
@@ -228,7 +229,7 @@ export const searchAllTransactions = async (req: Request, res: Response): Promis
         }
         const { transactions, total } = await TransactionService.searchAllTransactions(query, page, limit);
         const totalPages = Math.ceil(total / limit);
-        if (page > totalPages) {
+        if (page > 1 && page > totalPages) {
             res.status(400).json({ message: `Page cannot be greater than total pages (${totalPages})}` })
             return;
         }
