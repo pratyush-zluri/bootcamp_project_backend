@@ -7,7 +7,7 @@ dotenv.config()
 const config = {
   driver: PostgreSqlDriver,
   entities: [Transaction],
-  clientUrl: 'postgresql://trans_db_owner:lod7tvRG9Djq@ep-lively-cherry-a5xwvy1y.us-east-2.aws.neon.tech/trans_db?sslmode=require',
+  clientUrl: process.env.connection_url,
   // dbName: process.env.dbName,
   // user: process.env.user,
   // password: process.env.password,

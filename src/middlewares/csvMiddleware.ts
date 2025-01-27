@@ -91,6 +91,14 @@ const validateCSVData = async (req: Request, res: Response, next: NextFunction):
                 continue;
             }
 
+            if (date < '1990-01-01') {
+                const errorMsg = `Invalid date value in row: ${JSON.stringify(row)} - ${row.Date}, date cannot be older than 1990-01-01`;
+                logger.error(errorMsg);
+                errors.push(errorMsg);
+                continue;
+            }
+
+
             const { error } = schema.validate(row);
             if (error) {
                 logger.error(`Validation error: ${error.details[0].message}`);
