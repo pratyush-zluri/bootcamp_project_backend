@@ -63,6 +63,7 @@ export const getSoftDeletedTransactions = async (req: Request, res: Response) =>
         const totalPages = Math.ceil(total / limit);
         if (page > totalPages) {
             res.status(400).json({ message: `Page cannot be greater than total pages (${totalPages})` });
+            return;
         }
         res.status(200).json({
             transactions,
