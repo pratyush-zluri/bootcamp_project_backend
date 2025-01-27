@@ -74,7 +74,7 @@ export const parseCsv = async (req: Request, res: Response): Promise<void> => {
             transaction.date = parsedDate;
             transaction.description = row.Description;
             transaction.originalAmount = row.Amount;
-            transaction.currency = row.Currency;
+            transaction.currency = row.Currency.toUpperCase();
             transaction.amount_in_inr = row.Amount * conversionRate;
 
             transactions.push(transaction);
