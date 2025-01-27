@@ -37,6 +37,11 @@ export const getTransactions = async (req: Request, res: Response): Promise<void
             return;
         }
 
+        const totalPages = Math.ceil(total / limit);
+        if (page > totalPages) {
+            res.status(400).json({ message: `Page cannot be greater than total pages (${totalPages})` });
+        }
+
         res.status(200).json({
             transactions,
             total,
@@ -55,6 +60,10 @@ export const getSoftDeletedTransactions = async (req: Request, res: Response) =>
         const page = parseInt(req.query.page as string, 10) || 1;
         const limit = parseInt(req.query.limit as string, 10) || 10;
         const { transactions, total } = await TransactionService.getSoftDeletedTransactions(page, limit);
+        const totalPages = Math.ceil(total / limit);
+        if (page > totalPages) {
+            res.status(400).json({ message: `Page cannot be greater than total pages (${totalPages})` });
+        }
         res.status(200).json({
             transactions,
             total,
@@ -208,13 +217,27 @@ export const searchAllTransactions = async (req: Request, res: Response): Promis
         const query = req.query.query as string;
         const page = parseInt(req.query.page as string, 10) || 1;
         const limit = parseInt(req.query.limit as string, 10) || 10;
+        if (limit < 1 || limit > 500) {
+            res.status(400).json({ message: "Limit should be between 1 and 500" });
+            return;
+        }
+        if (page < 1) {
+            res.status(400).json({ message: "Page should be greater than zero" });
+            return;
+        }
         const { transactions, total } = await TransactionService.searchAllTransactions(query, page, limit);
+        const totalPages = Math.ceil(total / limit);
+        if (page > totalPages) {
+            res.status(400).json({ message: `Page cannot be greater than total pages (${totalPages})}` })
+            return;
+        }
         res.status(200).json({
             transactions,
             page,
             limit,
             total,
         });
+
     } catch (err: any) {
         logger.error("Error searching transactions:", err);
         res.status(500).json({ message: 'An error occurred while searching transactions' });
