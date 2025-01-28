@@ -37,8 +37,7 @@ export const idValidator = (req: Request, res: Response, next: NextFunction): vo
 export const pageLimitValidator = (req: Request, res: Response, next: NextFunction): void => {
   const page = parseInt(req.query.page as string, 10);
   const limit = parseInt(req.query.limit as string, 10);
-
-  if (isNaN(page) || isNaN(limit)) {
+  if ((page && isNaN(page)) || (limit && isNaN(limit))) {
     res.status(400).json({
       message: "Page and Limit must be numbers"
     });
