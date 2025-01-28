@@ -62,9 +62,9 @@ export const parseCsv = async (req: Request, res: Response): Promise<void> => {
 
             let conversionRate;
             try {
-                conversionRate = transactionServices.getConversionRate(row.Currency, row.Date.split('T')[0]);
+                conversionRate = transactionServices.getConversionRate(row.Currency.toUpperCase(), row.Date.split('T')[0]);
             } catch (error) {
-                const errorMsg = `Error getting conversion rate for currency: ${row.Currency}`;
+                const errorMsg = `Error getting conversion rate for currency: ${row.Currency.toUpperCase()}`;
                 logger.error(errorMsg, error);
                 errors.push(errorMsg);
                 continue;
