@@ -11,6 +11,10 @@ export const addTransaction = async (req: Request, res: Response): Promise<void>
             res.status(400).json({ message: 'Missing required fields' });
             return;
         }
+
+        // Remove extra spaces from description
+        description = description.trim().replace(/\s+/g, ' ');
+
         currency = currency.toUpperCase();
         const transaction = await TransactionService.addTransaction({ description, originalAmount, currency, date });
         res.status(201).json(transaction);
@@ -22,8 +26,8 @@ export const addTransaction = async (req: Request, res: Response): Promise<void>
             res.status(500).json({ message: 'An error occurred while adding the transaction' });
         }
     }
-
 };
+
 
 export const getTransactions = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -85,10 +89,17 @@ export const updateTransaction = async (req: Request, res: Response): Promise<vo
     try {
         const id = parseInt(req.params.id);
         let { description, originalAmount, currency, date } = req.body;
+
         if (!description && !originalAmount && !currency && !date) {
             res.status(200).json({ message: 'No changes made as no field updated' });
             return;
         }
+
+        // Remove extra spaces from description if it exists
+        if (description) {
+            description = description.trim().replace(/\s+/g, ' ');
+        }
+
         currency = currency.toUpperCase();
         const transaction = await TransactionService.updateTransaction(id, { description, originalAmount, currency, date });
         res.status(200).json({ message: "Transaction updated successfully", transaction });
@@ -195,19 +206,20 @@ export const downloadTransactionsCSV = async (req: Request, res: Response): Prom
 export const batchSoftDeleteTransactions = async (req: Request, res: Response): Promise<void> => {
     try {
         const { ids }: { ids: string[] } = req.body;
+        if (!ids) {
+            res.status(400).json({ message: "Please provide at least one ID." });
+            return;
+        }
         if (ids.length == 0) {
             res.status(400).json({ message: "Please provide at least one ID." });
             return;
         }
-
         const parsedIds = ids.map((id: string) => parseInt(id, 10));
 
         if (!Array.isArray(parsedIds) || parsedIds.some(isNaN)) {
             res.status(400).json({ message: "Invalid IDs format. Please provide an array of numbers." });
             return;
         }
-
-
         const transactions = await TransactionService.batchSoftDeleteTransactions(parsedIds);
         res.json({ message: "Transactions soft deleted", transactions });
     } catch (err: any) {
@@ -251,6 +263,10 @@ export const searchAllTransactions = async (req: Request, res: Response): Promis
 export const batchHardDeleteTransactions = async (req: Request, res: Response): Promise<void> => {
     try {
         const { ids }: { ids: string[] } = req.body;
+        if (!ids) {
+            res.status(400).json({ message: "Please provide at least one ID" });
+            return;
+        }
         if (ids.length == 0) {
             res.status(400).json({ message: "Please provide atleast one ID" })
             return;
@@ -281,6 +297,10 @@ export const batchHardDeleteTransactions = async (req: Request, res: Response): 
 export const batchRestoreTransactions = async (req: Request, res: Response): Promise<void> => {
     try {
         const { ids }: { ids: string[] } = req.body;
+        if (!ids) {
+            res.status(400).json({ message: "Please provide at least one ID" });
+            return;
+        }
         if (ids.length == 0) {
             res.status(400).json({ message: "Please provide atleast one ID" })
             return;

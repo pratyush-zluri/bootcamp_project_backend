@@ -28,7 +28,7 @@ export const parseCsv = async (req: Request, res: Response): Promise<void> => {
 
         const dateDescriptionPairs = validData.map((data) => ({
             date: formatDate(data.Date),
-            description: data.Description,
+            description: data.Description.trim().replace(/\s+/g, ' '),
         }));
 
         const existingTransactions = await em.find(Transaction, {
@@ -44,6 +44,7 @@ export const parseCsv = async (req: Request, res: Response): Promise<void> => {
 
         for (const row of validData) {
             const parsedDate = formatDate(row.Date);
+            const normalizedDescription = row.Description.trim().replace(/\s+/g, ' ');
 
             if (row.Amount < 0) {
                 const errorMsg = `Negative amount in row: ${JSON.stringify(row)} - ${row.Amount}`;
@@ -52,9 +53,14 @@ export const parseCsv = async (req: Request, res: Response): Promise<void> => {
                 continue;
             }
 
-            const key = `${parsedDate.toISOString().split('T')[0]}|${row.Description}`;
+            const key = `${parsedDate.toISOString().split('T')[0]}|${normalizedDescription}`;
             if (existingSet.has(key)) {
                 repeatsInDB.push(row);
+                continue;
+            }
+
+            if (seenEntries.has(key)) {
+                duplicateRows.push(row);
                 continue;
             }
 
@@ -72,7 +78,7 @@ export const parseCsv = async (req: Request, res: Response): Promise<void> => {
 
             const transaction = new Transaction();
             transaction.date = parsedDate;
-            transaction.description = row.Description;
+            transaction.description = normalizedDescription;
             transaction.originalAmount = row.Amount;
             transaction.currency = row.Currency.toUpperCase();
             transaction.amount_in_inr = row.Amount * conversionRate;

@@ -79,7 +79,7 @@ export const newEntryValidator = async (req: Request, res: Response, next: NextF
 
   try {
     const em = await initORM();
-    const { description, originalAmount, currency, date } = req.body;
+    let { description, originalAmount, currency, date } = req.body;
 
     const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
     if (!dateRegex.test(date)) {
@@ -116,6 +116,7 @@ export const newEntryValidator = async (req: Request, res: Response, next: NextF
       })
       return;
     }
+    description = description.trim().replace(/\s+/g, ' ');
 
     const existingTransaction = await em.findOne(Transaction, { date: transactionDate, description });
 
