@@ -3,8 +3,48 @@ import { Transaction } from '../entities/transactions';
 import initORM from '../utils/init_ORM';
 import { currencyConversionRates } from "../globals/currencyConversionRates";
 import { isValid } from 'date-fns';
+import { parseStringPromise } from 'xml2js';
+import axios from 'axios';
 
+const exchangeRateCache: Map<string, number> = new Map();
 class TransactionService {
+
+    public async getCurrencyConversion(Currency: string, date: string): Promise<number> {
+        try {
+            // Step 1: Get EUR to INR exchange rate for the given date
+            const eurToInrUrl = `https://data-api.ecb.europa.eu/service/data/EXR/D.INR.EUR.SP00.A?startPeriod=${date}&endPeriod=${date}&type=jsondata`;
+            const eurToInrResponse = await axios.get(eurToInrUrl, { headers: { Accept: "application/xml" } });
+            const eurToInrXml = eurToInrResponse.data as string; // Cast to string
+            const eurToInrData = await parseStringPromise(eurToInrXml, { explicitArray: false });
+            const eurToInrRate = parseFloat(
+                eurToInrData[`message:GenericData`][`message:DataSet`][`generic:Series`][`generic:Obs`][`generic:ObsValue`][`$`][`value`]
+            );
+            if (!eurToInrRate) {
+                throw new Error("EUR to INR conversion rate not found.");
+            }
+            console.log(`EUR to INR Rate for ${date}: ${eurToInrRate}`);
+            // Step 2: Get EUR to SGD exchange rate for the given date
+            const eurToSgdUrl = `https://data-api.ecb.europa.eu/service/data/EXR/D.${Currency}.EUR.SP00.A?startPeriod=${date}&endPeriod=${date}&type=jsondata`;
+            const eurToSgdResponse = await axios.get(eurToSgdUrl, { headers: { Accept: "application/xml" } });
+            const eurToSgdXml = eurToSgdResponse.data as string; // Cast to string
+            const eurToSgdData = await parseStringPromise(eurToSgdXml, { explicitArray: false });
+            const eurToSgdRate = parseFloat(
+                eurToSgdData["message:GenericData"]["message:DataSet"]["generic:Series"]["generic:Obs"]["generic:ObsValue"]["$"]["value"]
+            );
+            if (!eurToSgdRate) {
+                throw new Error("Conversion rate for currency.");
+            }
+            console.log(`EUR to SGD Rate for ${date}: ${eurToSgdRate}`);
+            // Step 3: Convert SGD to INR using the rates
+            const sgdToInr = eurToInrRate / eurToSgdRate; // SGD to INR using EUR as intermediary
+            // Step 4: Return the conversion rate
+            console.log(`Exchange Rate (SGD to INR): ${sgdToInr}`);
+            return sgdToInr;
+        } catch (error) {
+            console.error("Error fetching currency data:");
+            throw error;
+        }
+    }
 
     public getConversionRate(currency: string, date: string): number {
         console.log('Checking conversion rate for:', { date, currency });
@@ -15,6 +55,27 @@ class TransactionService {
 
         return fallbackRate;
     }
+
+
+    private async getCachedExchangeRate(currency: string, date: string): Promise<number> {
+        const cacheKey = `${currency}-${date}`;
+        if (exchangeRateCache.has(cacheKey)) {
+            return exchangeRateCache.get(cacheKey)!;
+        }
+
+        let exchangeRate: number;
+        try {
+            exchangeRate = await this.getCurrencyConversion(currency, date);
+        } catch (error: any) {
+            console.warn("Falling back to static conversion rates due to error:", error.message);
+            exchangeRate = this.getConversionRate(currency, date);
+        }
+
+        exchangeRateCache.set(cacheKey, exchangeRate);
+        return exchangeRate;
+    }
+
+
 
     public async addTransaction(data: { description: string; originalAmount: number; currency: string; date: string }) {
         const em = await initORM();
@@ -30,13 +91,13 @@ class TransactionService {
         transaction.currency = data.currency;
         transaction.originalAmount = data.originalAmount;
 
-        const exchangeRate = this.getConversionRate(data.currency, transactionDate.toISOString().split('T')[0]);
+        const exchangeRate = await this.getCachedExchangeRate(data.currency, transactionDate.toISOString().split('T')[0]);
+
         transaction.amount_in_inr = data.originalAmount * exchangeRate;
 
         await em.persistAndFlush(transaction);
         return transaction;
     }
-
     public async getTransactions(page: number, limit: number) {
         const em: EntityManager = await initORM();
         const offset: number = (page - 1) * limit;
@@ -93,7 +154,8 @@ class TransactionService {
             transaction.currency = data.currency;
         }
 
-        const exchangeRate = this.getConversionRate(transaction.currency, transaction.date.toISOString().split('T')[0]);
+        const exchangeRate = await this.getCachedExchangeRate(transaction.currency, transaction.date.toISOString().split('T')[0]);
+
         transaction.amount_in_inr = transaction.originalAmount * exchangeRate;
 
         await em.flush();
