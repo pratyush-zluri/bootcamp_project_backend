@@ -28,7 +28,7 @@ export const parseCsv = async (req: Request, res: Response): Promise<void> => {
 
         const dateDescriptionPairs = validData.map((data) => ({
             date: formatDate(data.Date),
-            description: data.Description.trim().replace(/\s+/g, ' '),
+            description: data.Description.trim().normalize('NFKD').replace(/[^\w\s-]/g, '').replace(/\s+/g, ' ').trim(),
         }));
 
         const existingTransactions = await em.find(Transaction, {
@@ -44,7 +44,8 @@ export const parseCsv = async (req: Request, res: Response): Promise<void> => {
 
         for (const row of validData) {
             const parsedDate = formatDate(row.Date);
-            const normalizedDescription = row.Description.trim().replace(/\s+/g, ' ');
+            // Normalize description by removing extra spaces and trimming
+            const normalizedDescription = row.Description.trim().normalize('NFKD').replace(/[^\w\s-]/g, '').replace(/\s+/g, ' ').trim();
 
             if (row.Amount < 0) {
                 const errorMsg = `Negative amount in row: ${JSON.stringify(row)} - ${row.Amount}`;
