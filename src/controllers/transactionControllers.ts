@@ -181,7 +181,7 @@ export const downloadTransactionsCSV = async (req: Request, res: Response): Prom
             res.status(404).json({ message: 'No transactions available to download' });
             return;
         }
-        const csv = await parseAsync(transactions, { fields: ['id', 'Date', 'Description', 'Amount', 'Currency', 'amount_in_inr'] });
+        const csv = await parseAsync(transactions, { fields: ['id', 'date', 'description', 'originalAmount', 'currency', 'amount_in_inr'] });
         res.header('Content-Type', 'text/csv');
         res.attachment('transactions.csv');
         res.send(csv);
