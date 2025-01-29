@@ -11,10 +11,11 @@ export const addTransaction = async (req: Request, res: Response): Promise<void>
             res.status(400).json({ message: 'Missing required fields' });
             return;
         }
-
-        // Remove extra spaces from description
-        description = description.trim().replace(/\s+/g, ' ');
-
+        description = description.trim().normalize('NFKD').replace(/[^\w\s-]/g, '').replace(/\s+/g, ' ').trim();
+        if (description === '') {
+            res.status(400).json({ message: 'Description cannot be empty or just spaces' });
+            return;
+        }
         currency = currency.toUpperCase();
         const transaction = await TransactionService.addTransaction({ description, originalAmount, currency, date });
         res.status(201).json(transaction);
@@ -97,7 +98,11 @@ export const updateTransaction = async (req: Request, res: Response): Promise<vo
 
         // Remove extra spaces from description if it exists
         if (description) {
-            description = description.trim().replace(/\s+/g, ' ');
+            description = description.trim().normalize('NFKD').replace(/[^\w\s-]/g, '').replace(/\s+/g, ' ').trim()
+        }
+        if (description === '') {
+            res.status(400).json({ message: 'Description cannot be empty or just spaces' });
+            return;
         }
         if (currency) {
             currency = currency.toUpperCase();

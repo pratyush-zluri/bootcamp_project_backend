@@ -31,6 +31,7 @@ export const parseCsv = async (req: Request, res: Response): Promise<void> => {
             description: data.Description.trim().normalize('NFKD').replace(/[^\w\s-]/g, '').replace(/\s+/g, ' ').trim(),
         }));
 
+
         const existingTransactions = await em.find(Transaction, {
             $or: dateDescriptionPairs,
         });
