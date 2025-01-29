@@ -99,12 +99,15 @@ export const updateTransaction = async (req: Request, res: Response): Promise<vo
         if (description) {
             description = description.trim().replace(/\s+/g, ' ');
         }
-
-        currency = currency.toUpperCase();
+        if (currency) {
+            currency = currency.toUpperCase();
+        }
         const transaction = await TransactionService.updateTransaction(id, { description, originalAmount, currency, date });
         res.status(200).json({ message: "Transaction updated successfully", transaction });
     } catch (err: any) {
-        if (err.message === "Transaction not found") {
+        if (err.message === "A transaction with the same date and description already exists") {
+            res.status(400).json({ message: "A transaction with the same date and description already exists" });
+        } else if (err.message === "Transaction not found") {
             res.status(404).json({ message: "Transaction not found" });
         } else if (err.message.startsWith("Conversion rate for currency")) {
             res.status(400).json({ message: err.message });

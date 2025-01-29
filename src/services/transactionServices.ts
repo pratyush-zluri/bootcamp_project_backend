@@ -5,6 +5,7 @@ import { currencyConversionRates } from "../globals/currencyConversionRates";
 import { isValid } from 'date-fns';
 import { parseStringPromise } from 'xml2js';
 import axios from 'axios';
+import { error } from 'console';
 
 const exchangeRateCache: Map<string, number> = new Map();
 class TransactionService {
@@ -152,6 +153,12 @@ class TransactionService {
         }
         if (data.currency !== undefined) {
             transaction.currency = data.currency;
+        }
+        const existingTransaction = await em.findOne(Transaction, { date: transaction.date, description: transaction.description });
+
+        if (existingTransaction) {
+            throw new Error("A transaction with the same date and description already exists");
+            return;
         }
 
         const exchangeRate = await this.getCachedExchangeRate(transaction.currency, transaction.date.toISOString().split('T')[0]);
